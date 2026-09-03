@@ -9,6 +9,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 *.pkl
+*.pkl.sig
 
 # --- Node / frontend ---
 node_modules/

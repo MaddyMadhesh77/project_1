@@ -1,0 +1,842 @@
+[
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "brand-new uncontested fact, no existing memory to conflict with"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 0.7,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "brand-new uncontested fact, no existing memory to conflict with"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "brand-new uncontested fact, no existing memory to conflict with"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 0.7,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "brand-new uncontested fact, no existing memory to conflict with"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 0.4,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "brand-new uncontested fact, no existing memory to conflict with"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 0.4,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 0.7,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "brand-new uncontested fact, no existing memory to conflict with"
+  },
+  {
+    "features": {
+      "similarity": 0.95,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.95,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.95,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 3,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.88,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.88,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.88,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 3,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.75,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.75,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.75,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 10.0,
+      "prior_trust_score": 80.0,
+      "corroboration_count": 3,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "consistent restatement of an existing memory, no contradiction"
+  },
+  {
+    "features": {
+      "similarity": 0.7,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 3.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "legitimate low-ambiguity correction backed by independent corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.7,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 3.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "legitimate low-ambiguity correction backed by independent corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.7,
+      "contradiction": 0.1,
+      "source_reliability": 1.0,
+      "memory_age_days": 3.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "legitimate low-ambiguity correction backed by independent corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.7,
+      "contradiction": 0.1,
+      "source_reliability": 1.0,
+      "memory_age_days": 3.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "legitimate low-ambiguity correction backed by independent corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.7,
+      "contradiction": 0.2,
+      "source_reliability": 1.0,
+      "memory_age_days": 3.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "legitimate low-ambiguity correction backed by independent corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.7,
+      "contradiction": 0.2,
+      "source_reliability": 1.0,
+      "memory_age_days": 3.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "legitimate low-ambiguity correction backed by independent corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "admin/system reinstatement of a previously-good fact"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 1.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "admin/system reinstatement of a previously-good fact"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "llm-inferred derived fact (e.g. a recommendation), independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "llm-inferred derived fact (e.g. a recommendation), independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.0,
+      "contradiction": 0.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 0.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": false
+    },
+    "label": "safe",
+    "note": "llm-inferred derived fact (e.g. a recommendation), independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.95,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 85.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.95,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 70.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.95,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 55.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.88,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 85.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.88,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 70.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.88,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 55.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.8,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 85.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.8,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 70.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.8,
+      "contradiction": 1.0,
+      "source_reliability": 1.0,
+      "memory_age_days": 15.0,
+      "prior_trust_score": 55.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "direct contradiction (polarity flip) against an established trusted memory"
+  },
+  {
+    "features": {
+      "similarity": 0.9,
+      "contradiction": 1.0,
+      "source_reliability": 0.4,
+      "memory_age_days": 5.0,
+      "prior_trust_score": 60.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction sourced from a low-reliability inference, no corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.75,
+      "contradiction": 1.0,
+      "source_reliability": 0.4,
+      "memory_age_days": 5.0,
+      "prior_trust_score": 60.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction sourced from a low-reliability inference, no corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.9,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 5.0,
+      "prior_trust_score": 60.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction sourced from a low-reliability inference, no corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.75,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 5.0,
+      "prior_trust_score": 60.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction sourced from a low-reliability inference, no corroboration"
+  },
+  {
+    "features": {
+      "similarity": 0.85,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 50.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction against a young, not-yet-well-established memory"
+  },
+  {
+    "features": {
+      "similarity": 0.85,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 0.0,
+      "prior_trust_score": 40.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction against a young, not-yet-well-established memory"
+  },
+  {
+    "features": {
+      "similarity": 0.85,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 1.0,
+      "prior_trust_score": 50.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction against a young, not-yet-well-established memory"
+  },
+  {
+    "features": {
+      "similarity": 0.85,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 1.0,
+      "prior_trust_score": 40.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction against a young, not-yet-well-established memory"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.5,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "ambiguous same-predicate correction with zero corroboration and weak source"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.65,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "ambiguous same-predicate correction with zero corroboration and weak source"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.8,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "ambiguous same-predicate correction with zero corroboration and weak source"
+  },
+  {
+    "features": {
+      "similarity": 0.9,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 5.0,
+      "prior_trust_score": 60.0,
+      "corroboration_count": 0,
+      "conversation_recency": 0.3,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction injected via a stale/replayed conversation context"
+  },
+  {
+    "features": {
+      "similarity": 0.9,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 5.0,
+      "prior_trust_score": 60.0,
+      "corroboration_count": 0,
+      "conversation_recency": 0.5,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction injected via a stale/replayed conversation context"
+  },
+  {
+    "features": {
+      "similarity": 0.92,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 4.0,
+      "prior_trust_score": 55.0,
+      "corroboration_count": 1,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction with light corroboration -- still net-negative given how strong the conflict is"
+  },
+  {
+    "features": {
+      "similarity": 0.92,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 4.0,
+      "prior_trust_score": 55.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "contradiction with light corroboration -- still net-negative given how strong the conflict is"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.5,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "same ambiguous contradiction range as the poisoned case, but independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.5,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 3,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "same ambiguous contradiction range as the poisoned case, but independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.65,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "same ambiguous contradiction range as the poisoned case, but independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.65,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 3,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "same ambiguous contradiction range as the poisoned case, but independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.8,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 2,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "same ambiguous contradiction range as the poisoned case, but independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 0.8,
+      "source_reliability": 0.6,
+      "memory_age_days": 8.0,
+      "prior_trust_score": 65.0,
+      "corroboration_count": 3,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "safe",
+    "note": "same ambiguous contradiction range as the poisoned case, but independently corroborated"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 1.0,
+      "source_reliability": 0.4,
+      "memory_age_days": 6.0,
+      "prior_trust_score": 58.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "weak-source contradiction at moderate (not extreme) similarity"
+  },
+  {
+    "features": {
+      "similarity": 0.5,
+      "contradiction": 1.0,
+      "source_reliability": 0.4,
+      "memory_age_days": 6.0,
+      "prior_trust_score": 58.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "weak-source contradiction at moderate (not extreme) similarity"
+  },
+  {
+    "features": {
+      "similarity": 0.6,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 6.0,
+      "prior_trust_score": 58.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "weak-source contradiction at moderate (not extreme) similarity"
+  },
+  {
+    "features": {
+      "similarity": 0.5,
+      "contradiction": 1.0,
+      "source_reliability": 0.6,
+      "memory_age_days": 6.0,
+      "prior_trust_score": 58.0,
+      "corroboration_count": 0,
+      "conversation_recency": 1.0,
+      "has_match": true
+    },
+    "label": "poisoned",
+    "note": "weak-source contradiction at moderate (not extreme) similarity"
+  }
+]
