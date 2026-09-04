@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Memory, MemoryVersion
+from app.core.config import Settings
+from app.models import Memory, MemoryVersion, Provenance
 from app.services.extractor import CandidateMemory, format_candidate_text, parse_stored_text
 from app.services.llm_client import LLMClient
 from app.services.retrieval import RetrievalHit
@@ -34,6 +35,35 @@ class FeatureVector:
     has_match: bool  # whether an existing memory was matched at all
 
 
+# Fixed feature order (DESIGN.md 6.4) shared by the Phase 7 RandomForest
+# (services/trust_engine.py) and its training script (app/ml/train.py) --
+# a single source of truth so the two never drift on column order.
+FEATURE_NAMES = [
+    "similarity",
+    "contradiction",
+    "source_reliability",
+    "memory_age_days",
+    "prior_trust_score",
+    "corroboration_count",
+    "conversation_recency",
+    "has_match",
+]
+
+
+def to_vector(features: FeatureVector) -> list[float]:
+    """FeatureVector -> the fixed-order numeric row FEATURE_NAMES describes."""
+    return [
+        features.similarity,
+        features.contradiction,
+        features.source_reliability,
+        features.memory_age_days,
+        features.prior_trust_score,
+        float(features.corroboration_count),
+        features.conversation_recency,
+        1.0 if features.has_match else 0.0,
+    ]
+
+
 async def _count_corroborating(
     db: AsyncSession, *, predicate: str, value: str, polarity: int, exclude_memory_id: uuid.UUID
 ) -> int:
@@ -50,6 +80,53 @@ async def _count_corroborating(
     return result.scalar_one()
 
 
+def recency_from_gap(gap_seconds: float, *, full_window: float, floor_window: float, floor: float) -> float:
+    """Pure decay curve, split out from _conversation_recency so the actual
+    math is unit-testable without a database -- matching this codebase's
+    convention (build_trend, classify_outcome, build_root) of keeping
+    decision logic DB-free. 1.0 up to full_window, floor at/after
+    floor_window, linear in between.
+    """
+    if gap_seconds <= full_window:
+        return 1.0
+    if gap_seconds >= floor_window:
+        return floor
+
+    frac = (gap_seconds - full_window) / (floor_window - full_window)
+    return round(1.0 - frac * (1.0 - floor), 3)
+
+
+async def _conversation_recency(db: AsyncSession, *, conversation_id: uuid.UUID, settings: Settings) -> float:
+    """1.0 while a conversation is continuously active, decaying toward a
+    floor as the gap since its last stored memory grows -- replaces the old
+    hardcoded flat 1.0 (DESIGN.md 6.4 "conversation_recency"), which carried
+    zero information regardless of how stale the conversation actually was.
+
+    A brand-new conversation (no prior stored memory yet -- the common case:
+    every conversation's first turn) has nothing to be stale relative to, so
+    it's always 1.0, matching the old flat behavior for that case.
+    """
+    last_activity = (
+        await db.execute(
+            sa.select(sa.func.max(MemoryVersion.created_at))
+            .select_from(Provenance)
+            .join(MemoryVersion, MemoryVersion.version_id == Provenance.version_id)
+            .where(Provenance.conversation_id == conversation_id)
+        )
+    ).scalar_one_or_none()
+
+    if last_activity is None:
+        return 1.0
+
+    gap_seconds = (datetime.now(timezone.utc) - last_activity).total_seconds()
+    return recency_from_gap(
+        gap_seconds,
+        full_window=settings.conversation_recency_full_window_seconds,
+        floor_window=settings.conversation_recency_floor_window_seconds,
+        floor=settings.conversation_recency_floor,
+    )
+
+
 async def compute_features(
     db: AsyncSession,
     *,
@@ -57,12 +134,11 @@ async def compute_features(
     best_match: RetrievalHit | None,
     source_type: str,
     llm_client: LLMClient,
+    conversation_id: uuid.UUID,
+    settings: Settings,
 ) -> FeatureVector:
     source_reliability = SOURCE_RELIABILITY.get(source_type, 0.5)
-    # MVP simplification: every chat turn is part of the live, active
-    # conversation -- there's no notion of a "stale" background conversation
-    # in this single-session demo, so this feature is a flat 1.0 for now.
-    conversation_recency = 1.0
+    conversation_recency = await _conversation_recency(db, conversation_id=conversation_id, settings=settings)
 
     if best_match is None:
         return FeatureVector(

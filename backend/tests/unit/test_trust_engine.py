@@ -1,10 +1,19 @@
 from app.core.config import Settings
 from app.services.features import FeatureVector
-from app.services.trust_engine import score_candidate
+from app.services.trust_engine import _score_rule as score_candidate
 
 
 def _settings(**overrides):
     return Settings(**overrides)
+
+
+# This file tests the deterministic rule scorer specifically (_score_rule),
+# not the public score_candidate blending entry point -- score_candidate's
+# behavior depends on whether app/ml/model.pkl happens to exist on the
+# machine running the tests (Phase 7), which would make these rule-engine
+# assertions (breakdown key names, exact point values) flaky based on
+# incidental local file-system state rather than the code under test. See
+# tests/unit/test_trust_engine_ml.py for the RF+SHAP blending behavior.
 
 
 def test_novel_uncontested_fact_is_stored():
