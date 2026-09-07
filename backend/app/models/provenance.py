@@ -13,7 +13,7 @@ class Provenance(Base):
     version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("memory_versions.version_id"), primary_key=True
     )
-    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     # user | llm_inference | admin_override | system
     source_type: Mapped[str] = mapped_column(sa.String, nullable=False)
     model_version: Mapped[str | None] = mapped_column(sa.String, nullable=True)
