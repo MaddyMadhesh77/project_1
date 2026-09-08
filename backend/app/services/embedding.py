@@ -19,4 +19,10 @@ class EmbeddingService:
 
 @lru_cache
 def get_embedding_service() -> EmbeddingService:
+    # Cached per-process (see main.py's lifespan, which warms this at
+    # startup) -- but per-*process*, not per-machine: `uvicorn --workers N`
+    # runs N separate OS processes, each getting its own independent copy of
+    # this model in memory (see README's "Running locally" note). There's no
+    # cross-process sharing here; scale by running multiple single-worker
+    # instances, not by adding worker processes to one.
     return EmbeddingService(get_settings().embedding_model)

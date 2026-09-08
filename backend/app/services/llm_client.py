@@ -20,6 +20,12 @@ class LLMClient(Protocol):
 class TemplatedLLMClient:
     """Canned, fully deterministic replies. No API key needed -- good for rehearsed demos."""
 
+    _NEGATION_MARKERS = {
+        "not", "no", "never", "don't", "doesn't", "didn't", "won't", "wouldn't",
+        "isn't", "wasn't", "aren't", "weren't", "hate", "hates", "hated",
+        "dislike", "dislikes", "stopped", "quit",
+    }
+
     _ACKS = [
         "Got it, I'll remember that.",
         "Noted, thanks for letting me know.",
@@ -36,15 +42,37 @@ class TemplatedLLMClient:
         return random.choice(self._ACKS)
 
     async def judge_contradiction(self, statement_a: str, statement_b: str) -> float:
-        # Deterministic heuristic (no model call): more shared words between the
-        # two statements suggests they're about the same underlying fact and an
-        # update to it (moderate contradiction); little overlap suggests an
-        # unrelated correction rather than a hard contradiction.
+        # Deterministic heuristic (no model call): two statements sharing most
+        # of their vocabulary are almost certainly about the same underlying
+        # fact, so a difference between them is more likely a real polarity
+        # flip ("I like Python" vs "I don't like Python" -- high overlap,
+        # opposite meaning) than two statements that barely share any words,
+        # which are probably about different things entirely and can both be
+        # true at once. Overlap therefore scales the score *up*, not down.
+        # A negation/negative-sentiment marker present on only one side is
+        # the clearest deterministic signal of an actual polarity flip this
+        # heuristic can detect, so it adds an extra bump on top of overlap.
+        #
+        # Known-wrong case: two statements that truly contradict but share
+        # little vocabulary (e.g. "I'm a vegetarian" vs "I had a steak last
+        # night") will under-score here -- there's no shared word to key off
+        # of. This is an ambiguous-case fallback for when the rule-based
+        # same-predicate/same-value polarity check doesn't apply (see
+        # services/features.py), not a substitute for a real model judge
+        # (ClaudeLLMClient.judge_contradiction).
         words_a = set(statement_a.lower().split())
         words_b = set(statement_b.lower().split())
         union = words_a | words_b
         overlap = len(words_a & words_b) / len(union) if union else 0.0
-        return round(0.6 - 0.3 * overlap, 2)
+
+        score = 0.15 + 0.55 * overlap
+
+        negated_a = bool(words_a & self._NEGATION_MARKERS)
+        negated_b = bool(words_b & self._NEGATION_MARKERS)
+        if negated_a != negated_b:
+            score += 0.3
+
+        return round(min(1.0, max(0.0, score)), 2)
 
 
 class ClaudeLLMClient:
