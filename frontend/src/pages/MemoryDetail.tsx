@@ -1,14 +1,34 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import GraphView from '../components/GraphView'
+import { SkeletonBlock, SkeletonTable } from '../components/Skeleton'
 import TrustBreakdownBars from '../components/TrustBreakdownBars'
-import { useMemory, useMemoryHistory } from '../lib/queries'
+import { useMemory, useMemoryGraph, useMemoryHistory } from '../lib/queries'
 import { statusBadgeClass, statusLabel } from '../lib/status'
+
+const HISTORY_PAGE_SIZE = 25
 
 export default function MemoryDetail() {
   const { memoryId } = useParams<{ memoryId: string }>()
   const { data: memory, isLoading, isError } = useMemory(memoryId)
-  const { data: history } = useMemoryHistory(memoryId)
+  const [historyPage, setHistoryPage] = useState(0)
+  const { data: history } = useMemoryHistory(memoryId, HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE)
+  const { data: graph } = useMemoryGraph(memoryId)
 
-  if (isLoading) return <p className="text-sm text-neutral-400">Loading…</p>
+  const historyTotal = history?.total ?? 0
+  const historyLastPage = Math.max(0, Math.ceil(historyTotal / HISTORY_PAGE_SIZE) - 1)
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <SkeletonBlock className="h-8 w-2/3" />
+        <SkeletonBlock className="h-36" />
+        <SkeletonBlock className="h-16" />
+        <SkeletonBlock className="h-56" />
+        <SkeletonTable rows={4} cols={6} />
+      </div>
+    )
+  }
   if (isError || !memory) return <p className="text-sm text-red-500">Memory not found.</p>
 
   return (
@@ -36,17 +56,29 @@ export default function MemoryDetail() {
         )}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200">Content hash</h2>
-          <p className="break-all font-mono text-xs text-neutral-500 dark:text-neutral-400">
-            {memory.content_hash ?? '—'}
+      <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200">Content hash</h2>
+        <p className="break-all font-mono text-xs text-neutral-500 dark:text-neutral-400">
+          {memory.content_hash ?? '—'}
+        </p>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">Dependencies</h2>
+          {graph && graph.nodes.length > 1 && (
+            <Link to={`/admin/memories/${memoryId}/graph`} className="text-xs text-neutral-500 hover:underline dark:text-neutral-400">
+              View full graph &rarr;
+            </Link>
+          )}
+        </div>
+        {graph && graph.nodes.length > 1 ? (
+          <GraphView nodes={graph.nodes} edges={graph.edges} rootVersionId={graph.root_version_id} height={220} />
+        ) : (
+          <p className="text-sm text-neutral-400">
+            No dependency edges yet -- this memory has no recorded ancestors or descendants.
           </p>
-        </div>
-        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200">Dependencies</h2>
-          <p className="text-sm text-neutral-400">None yet -- lands in Phase 4 (dependency graph).</p>
-        </div>
+        )}
       </section>
 
       <section>
@@ -64,7 +96,7 @@ export default function MemoryDetail() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-              {(history ?? []).map((version) => (
+              {(history?.items ?? []).map((version) => (
                 <tr
                   key={version.version_id}
                   className={version.is_active ? 'bg-neutral-50 dark:bg-neutral-900/50' : ''}
@@ -79,7 +111,7 @@ export default function MemoryDetail() {
                   </td>
                 </tr>
               ))}
-              {(!history || history.length === 0) && (
+              {(!history || history.items.length === 0) && (
                 <tr>
                   <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
                     No versions yet.
@@ -89,6 +121,31 @@ export default function MemoryDetail() {
             </tbody>
           </table>
         </div>
+
+        {historyTotal > HISTORY_PAGE_SIZE && (
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {historyPage * HISTORY_PAGE_SIZE + 1}-{Math.min(historyTotal, historyPage * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE)} of{' '}
+              {historyTotal}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                disabled={historyPage === 0}
+                className="rounded-md border border-neutral-300 px-3 py-1 text-sm disabled:opacity-40 dark:border-neutral-700"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setHistoryPage((p) => Math.min(historyLastPage, p + 1))}
+                disabled={historyPage >= historyLastPage}
+                className="rounded-md border border-neutral-300 px-3 py-1 text-sm disabled:opacity-40 dark:border-neutral-700"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   )
