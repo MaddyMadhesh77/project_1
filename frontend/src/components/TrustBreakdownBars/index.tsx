@@ -1,12 +1,28 @@
 import type { TrustBreakdown } from '../../lib/api'
 
+// Phase 2 rule-scorer keys (always available, cold start / below
+// min_training_samples) and Phase 7 SHAP feature-contribution keys (once the
+// RandomForest is trained and live) -- score_candidate returns one or the
+// other, never a mix, but this map covers both so the bars read the same way
+// regardless of which mechanism produced them.
 const LABELS: Record<string, string> = {
+  // Rule scorer (services/trust_engine.py::_score_rule)
   source: 'Source',
   semantic_similarity: 'Semantic similarity',
   novelty: 'Novelty',
   context: 'Context',
   contradiction: 'Contradiction',
   corroboration: 'Corroboration',
+  // RF + SHAP (services/trust_engine.py::_shap_breakdown) -- same underlying
+  // §6.4 features, real per-feature contributions toward P(safe) once live.
+  similarity: 'Similarity to closest match',
+  source_reliability: 'Source reliability',
+  memory_age_days: "Contradicted memory's age",
+  prior_trust_score: 'Prior trust score',
+  corroboration_count: 'Corroboration count',
+  conversation_recency: 'Conversation recency',
+  has_match: 'Matched an existing memory',
+  baseline: 'Model baseline',
 }
 
 interface TrustBreakdownBarsProps {
@@ -14,11 +30,11 @@ interface TrustBreakdownBarsProps {
   total: number
 }
 
-// Additive rule-scorer breakdown (DESIGN.md 6.5) rendered as a diverging bar
-// per component -- positive contributions right of the zero baseline, the
-// contradiction penalty (if any) to the left. Colors are the dataviz skill's
-// validated diverging blue/red pair (references/palette.md), never the
-// status palette (that's reserved for the trusted/low_trust/quarantined pill).
+// Additive breakdown (DESIGN.md 6.5) rendered as a diverging bar per
+// component -- positive contributions right of the zero baseline, negative
+// ones to the left. Colors are the dataviz skill's validated diverging
+// blue/red pair (references/palette.md), never the status palette (that's
+// reserved for the trusted/low_trust/quarantined pill).
 export default function TrustBreakdownBars({ breakdown, total }: TrustBreakdownBarsProps) {
   const entries = Object.entries(breakdown)
   const maxAbs = Math.max(1, ...entries.map(([, value]) => Math.abs(value)))

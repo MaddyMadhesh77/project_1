@@ -22,6 +22,18 @@ export default function AdminLayout() {
             <NavLink to="/admin/memories" className={navLinkClass}>
               Memories
             </NavLink>
+            <NavLink to="/admin/integrity" className={navLinkClass}>
+              Integrity
+            </NavLink>
+            <NavLink to="/admin/rollback" className={navLinkClass}>
+              Rollback
+            </NavLink>
+            <NavLink to="/admin/analytics" className={navLinkClass}>
+              Analytics
+            </NavLink>
+            <NavLink to="/admin/logs" className={navLinkClass}>
+              Logs
+            </NavLink>
             <NavLink to="/" className={navLinkClass}>
               Chat
             </NavLink>
