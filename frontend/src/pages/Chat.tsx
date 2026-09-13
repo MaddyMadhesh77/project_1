@@ -6,11 +6,43 @@ interface DisplayMessage extends ChatMessageIn {
   id: string
 }
 
+// Chat history previously lived only in React component state (bugs.md #9):
+// a page refresh silently lost the whole conversation, including
+// conversation_id, so /chat's server-side memory of "this conversation"
+// and the client's transcript of it diverged. localStorage keeps both
+// together across reloads -- matches bugs.md's own suggested fix (priority
+// table #15) rather than standing up a backend chat-history table.
+const STORAGE_KEY = 'recovermem_chat'
+
+interface StoredChat {
+  conversationId: string | undefined
+  messages: DisplayMessage[]
+}
+
+function loadStoredChat(): StoredChat {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { conversationId: undefined, messages: [] }
+    const parsed = JSON.parse(raw) as StoredChat
+    return { conversationId: parsed.conversationId, messages: parsed.messages ?? [] }
+  } catch {
+    return { conversationId: undefined, messages: [] }
+  }
+}
+
 export default function Chat() {
-  const [messages, setMessages] = useState<DisplayMessage[]>([])
+  const [initial] = useState(loadStoredChat)
+  const [messages, setMessages] = useState<DisplayMessage[]>(initial.messages)
   const [input, setInput] = useState('')
-  const [conversationId, setConversationId] = useState<string | undefined>(undefined)
+  const [conversationId, setConversationId] = useState<string | undefined>(initial.conversationId)
   const chat = useChat()
+
+  const persist = (nextMessages: DisplayMessage[], nextConversationId: string | undefined) => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ conversationId: nextConversationId, messages: nextMessages }),
+    )
+  }
 
   const sendMessage = (e: React.FormEvent) => {
     e.preventDefault()
@@ -18,7 +50,9 @@ export default function Chat() {
     if (!text || chat.isPending) return
 
     const history = messages.map(({ role, content }) => ({ role, content }))
-    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }])
+    const withUserMessage = [...messages, { id: crypto.randomUUID(), role: 'user' as const, content: text }]
+    setMessages(withUserMessage)
+    persist(withUserMessage, conversationId)
     setInput('')
 
     chat.mutate(
@@ -26,20 +60,36 @@ export default function Chat() {
       {
         onSuccess: (data) => {
           setConversationId(data.conversation_id)
-          setMessages((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), role: 'assistant', content: data.reply },
-          ])
+          const withReply = [
+            ...withUserMessage,
+            { id: crypto.randomUUID(), role: 'assistant' as const, content: data.reply },
+          ]
+          setMessages(withReply)
+          persist(withReply, data.conversation_id)
         },
       },
     )
   }
 
+  const clearChat = () => {
+    localStorage.removeItem(STORAGE_KEY)
+    setMessages([])
+    setConversationId(undefined)
+  }
+
   return (
     <div className="mx-auto flex h-screen max-w-2xl flex-col p-4">
-      <h1 className="mb-4 text-xl font-semibold text-neutral-800 dark:text-neutral-100">
-        RecoverMem
-      </h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-neutral-800 dark:text-neutral-100">RecoverMem</h1>
+        {messages.length > 0 && (
+          <button
+            onClick={clearChat}
+            className="text-xs text-neutral-500 hover:underline dark:text-neutral-400"
+          >
+            Clear chat
+          </button>
+        )}
+      </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         {messages.length === 0 && (

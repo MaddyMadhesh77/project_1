@@ -7,3 +7,18 @@
 body {
   margin: 0;
 }
+
+/* components/GraphView -- react-flow nodes are inline-styled for
+   position/border (computed per-render from dagre + status color), but
+   background/text follow the OS theme like the rest of the app. */
+.rm-graph-node {
+  background: #ffffff;
+  color: #262626;
+}
+
+@media (prefers-color-scheme: dark) {
+  .rm-graph-node {
+    background: #171717;
+    color: #e5e5e5;
+  }
+}
