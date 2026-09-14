@@ -40,3 +40,13 @@ npm run dev
 
 - Backend: http://localhost:8000 (`/health` should return `{"status": "ok"}`)
 - Frontend: http://localhost:5173 (`/` chat, `/admin/*` dashboard)
+
+Don't run the backend with `uvicorn ... --workers N` (N > 1) without
+accounting for it first: each worker is a separate process that loads its
+own full copy of the sentence-transformers embedding model
+(`app/services/embedding.py`) independently -- N workers means N times the
+model's memory footprint, with no sharing between them. A single worker's
+async event loop already serves many concurrent requests fine; scale
+throughput by running multiple single-worker instances behind a load
+balancer (or extracting embedding inference into its own service) rather
+than by adding `--workers`.
