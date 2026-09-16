@@ -66,7 +66,7 @@ export default function IntegrityCheck() {
           <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
             {result.tampered
               ? 'Recomputed hashes do not match the stored record. See affected versions below.'
-              : `All ${result.leaf_count} active versions match their recorded content hash and the Merkle root.`}
+              : `Every stored version matches its recorded content hash, and the Merkle root over ${result.leaf_count} active versions matches.`}
           </p>
 
           {result.row_mismatches.length > 0 && (
@@ -80,6 +80,21 @@ export default function IntegrityCheck() {
                     <Link to={`/admin/memories/${m.memory_id}`} className="font-mono text-xs hover:underline">
                       version {m.version_id}
                     </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.orphaned_version_ids.length > 0 && (
+            <div className="mt-3">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Missing provenance (cannot be hash-verified)
+              </h3>
+              <ul className="space-y-1">
+                {result.orphaned_version_ids.map((id) => (
+                  <li key={id} className="font-mono text-xs">
+                    version {id}
                   </li>
                 ))}
               </ul>

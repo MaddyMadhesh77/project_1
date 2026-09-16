@@ -81,7 +81,7 @@ class VerifyResult:
 
 
 async def verify_integrity(db: AsyncSession) -> VerifyResult:
-    """DESIGN.md 6.8 "Verify Integrity": for every active version, recompute
+    """DESIGN.md 6.8 "Verify Integrity": for every version, recompute
     `sha256(text || embedding_bytes || provenance)` from the row's CURRENT
     content and compare to the stored `content_hash` column (row-level
     tamper -- e.g. a DBA hand-editing `text` in place, which is exactly what
@@ -92,6 +92,11 @@ async def verify_integrity(db: AsyncSession) -> VerifyResult:
     added/removed/reordered rows, or exactly the root-level symptom of a
     row-level tamper). Read-only: a mismatch is reported, never silently
     "healed" by writing a new root over the evidence.
+
+    Superseded (inactive) versions are hash-checked too, even though only
+    active versions are Merkle leaves: version history is what rollback
+    reverts to, so a silently edited old version is as much a tamper as an
+    edited current one -- and POST /attack/tamper-db accepts any version_id.
 
     Deliberately a full O(N) scan + recompute over every active version, not
     an incrementally-cached check: fine at demo scale, but it's the one place
@@ -119,8 +124,11 @@ async def verify_integrity(db: AsyncSession) -> VerifyResult:
         await db.execute(
             sa.select(MemoryVersion, Provenance)
             .outerjoin(Provenance, Provenance.version_id == MemoryVersion.version_id)
-            .where(MemoryVersion.is_active.is_(True))
             .order_by(MemoryVersion.version_id)
+            # Always re-read row content from the database: a session that
+            # already holds these objects would otherwise hand back its cached
+            # attributes, hiding exactly the out-of-band edit being checked for.
+            .execution_options(populate_existing=True)
         )
     ).all()
 
@@ -134,7 +142,8 @@ async def verify_integrity(db: AsyncSession) -> VerifyResult:
             # hash so the leaf still participates in the root, rather than
             # vanishing from the tree the way the INNER JOIN made it vanish
             # from this whole query.
-            recomputed_hashes.append(version.content_hash)
+            if version.is_active:
+                recomputed_hashes.append(version.content_hash)
             continue
 
         provenance_fields = {
@@ -145,7 +154,8 @@ async def verify_integrity(db: AsyncSession) -> VerifyResult:
             "raw_input": provenance.raw_input,
         }
         recomputed = compute_content_hash(version.text, list(version.embedding), provenance_fields)
-        recomputed_hashes.append(recomputed)
+        if version.is_active:
+            recomputed_hashes.append(recomputed)
         if recomputed != version.content_hash:
             row_mismatches.append(
                 TamperedVersion(
