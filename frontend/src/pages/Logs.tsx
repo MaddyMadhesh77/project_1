@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { SkeletonTable } from '../components/Skeleton'
 import { statusBadgeClass, statusLabel } from '../lib/status'
@@ -24,6 +24,13 @@ export default function Logs() {
 
   const total = data?.total ?? 0
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1)
+
+  // If the data shrank under us (e.g. /admin/reset), the current page can sit
+  // past the end -- and the pager is hidden once total <= PAGE_SIZE, so there
+  // would be no way back. Snap to the last real page.
+  useEffect(() => {
+    if (data && !isPlaceholderData && page > lastPage) setPage(lastPage)
+  }, [data, isPlaceholderData, page, lastPage])
 
   return (
     <div className="space-y-4">

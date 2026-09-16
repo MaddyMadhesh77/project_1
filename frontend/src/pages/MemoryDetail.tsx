@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import GraphView from '../components/GraphView'
 import { SkeletonBlock, SkeletonTable } from '../components/Skeleton'
@@ -12,11 +12,21 @@ export default function MemoryDetail() {
   const { memoryId } = useParams<{ memoryId: string }>()
   const { data: memory, isLoading, isError } = useMemory(memoryId)
   const [historyPage, setHistoryPage] = useState(0)
-  const { data: history } = useMemoryHistory(memoryId, HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE)
+  const { data: history, isPlaceholderData: historyIsPlaceholder } = useMemoryHistory(memoryId, HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE)
   const { data: graph } = useMemoryGraph(memoryId)
 
   const historyTotal = history?.total ?? 0
   const historyLastPage = Math.max(0, Math.ceil(historyTotal / HISTORY_PAGE_SIZE) - 1)
+
+  // The route param changes without remounting this component when
+  // navigating between memories, so reset to the first history page.
+  useEffect(() => {
+    setHistoryPage(0)
+  }, [memoryId])
+
+  useEffect(() => {
+    if (history && !historyIsPlaceholder && historyPage > historyLastPage) setHistoryPage(historyLastPage)
+  }, [history, historyIsPlaceholder, historyPage, historyLastPage])
 
   if (isLoading) {
     return (
