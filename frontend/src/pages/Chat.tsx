@@ -4,14 +4,21 @@ import type { ChatMessageIn } from '../lib/api'
 
 interface DisplayMessage extends ChatMessageIn {
   id: string
+  // Shown under an assistant reply when some extracted memories failed to store.
+  warning?: string
 }
 
-// Chat history previously lived only in React component state (bugs.md #9):
+// Must not exceed ChatRequest.history's max_length on the backend
+// (routes/chat.py): sending the whole ever-growing transcript made every send
+// after the 51st message fail with a 422. Only the most recent turns are
+// useful context for the reply anyway.
+const MAX_HISTORY = 50
+
+// Chat history previously lived only in React component state:
 // a page refresh silently lost the whole conversation, including
 // conversation_id, so /chat's server-side memory of "this conversation"
 // and the client's transcript of it diverged. localStorage keeps both
-// together across reloads -- matches bugs.md's own suggested fix (priority
-// table #15) rather than standing up a backend chat-history table.
+// together across reloads, without standing up a backend chat-history table.
 const STORAGE_KEY = 'recovermem_chat'
 
 interface StoredChat {
@@ -49,7 +56,7 @@ export default function Chat() {
     const text = input.trim()
     if (!text || chat.isPending) return
 
-    const history = messages.map(({ role, content }) => ({ role, content }))
+    const history = messages.slice(-MAX_HISTORY).map(({ role, content }) => ({ role, content }))
     const withUserMessage = [...messages, { id: crypto.randomUUID(), role: 'user' as const, content: text }]
     setMessages(withUserMessage)
     persist(withUserMessage, conversationId)
@@ -62,7 +69,15 @@ export default function Chat() {
           setConversationId(data.conversation_id)
           const withReply = [
             ...withUserMessage,
-            { id: crypto.randomUUID(), role: 'assistant' as const, content: data.reply },
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: data.reply,
+              warning:
+                data.failed_candidates > 0
+                  ? `${data.failed_candidates} memory candidate${data.failed_candidates === 1 ? '' : 's'} failed to store`
+                  : undefined,
+            },
           ]
           setMessages(withReply)
           persist(withReply, data.conversation_id)
@@ -108,6 +123,7 @@ export default function Chat() {
             >
               {m.content}
             </span>
+            {m.warning && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">⚠ {m.warning}</p>}
           </div>
         ))}
         {chat.isPending && <p className="text-sm text-neutral-400">Thinking…</p>}

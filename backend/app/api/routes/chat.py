@@ -4,8 +4,9 @@ import logging
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -22,6 +23,21 @@ logger = logging.getLogger(__name__)
 
 _extractor = RuleBasedExtractor()
 
+# Connection-level failures (refused/dropped connection, pool exhausted) as
+# opposed to a problem with one candidate. asyncpg can surface a refused
+# connection as a raw OSError rather than a wrapped DBAPI error.
+_DB_UNAVAILABLE_ERRORS = (OSError, sa_exc.OperationalError, sa_exc.InterfaceError, sa_exc.TimeoutError)
+
+
+def same_memory_match(hits: list[retrieval.RetrievalHit], threshold: float) -> retrieval.RetrievalHit | None:
+    """The retrieval hit this candidate is an update of, if any: the one with
+    the highest *similarity*, not the RRF head. A keyword-only hit has
+    similarity 0.0 by construction, so taking hits[0] meant an update whose
+    top fused hit was keyword-only created a duplicate memory instead of
+    versioning the existing one."""
+    closest = max(hits, key=lambda hit: hit.similarity, default=None)
+    return closest if closest is not None and closest.similarity >= threshold else None
+
 
 class ChatMessageIn(BaseModel):
     # The Anthropic API only accepts "user"/"assistant" in a messages list --
@@ -37,8 +53,17 @@ class ChatRequest(BaseModel):
     # Unbounded input would be embedded, LLM-called, and Merkle-hashed at
     # whatever size the client sends -- cap it well above any real chat
     # message so a megabyte-sized payload can't reach the pipeline at all.
-    message: str = Field(max_length=4000)
+    message: str = Field(min_length=1, max_length=4000)
     history: list[ChatMessageIn] = Field(default_factory=list, max_length=50)
+
+    @field_validator("message")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        # A blank message used to run the whole pipeline (LLM reply, a
+        # conversation id) for nothing. The UI already refuses to send one.
+        if not value.strip():
+            raise ValueError("message must not be blank")
+        return value
 
 
 class StoredMemoryOut(BaseModel):
@@ -90,14 +115,12 @@ async def chat(
         try:
             async with db.begin_nested():
                 text = format_candidate_text(candidate)
-                embedding = embedding_service.embed(text)
+                embedding = await embedding_service.aembed(text)
 
                 hits = await retrieval.hybrid_search(
                     db, embedding=embedding, text=text, top_k=settings.retrieval_top_k
                 )
-                best_match = (
-                    hits[0] if hits and hits[0].similarity >= settings.retrieval_same_memory_threshold else None
-                )
+                best_match = same_memory_match(hits, settings.retrieval_same_memory_threshold)
 
                 feature_vector = await compute_features(
                     db,
@@ -166,6 +189,13 @@ async def chat(
                         decision=trust_result.decision,
                     )
                 )
+        except _DB_UNAVAILABLE_ERRORS as exc:
+            # Not a per-candidate failure: the database itself is unreachable,
+            # so every remaining candidate (and the commit) would fail too.
+            # Swallowing this used to return 200 with an empty stored_memories
+            # list, indistinguishable from "nothing worth remembering".
+            logger.exception("database unavailable while storing candidates for conversation %s", conversation_id)
+            raise HTTPException(status_code=503, detail="memory store unavailable") from exc
         except Exception:
             failed_candidates += 1
             logger.exception("failed to store candidate %r for conversation %s", candidate.raw_text, conversation_id)
