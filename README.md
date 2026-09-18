@@ -8,8 +8,10 @@ automatically roll back everything downstream of a memory later found to
 be poisoned.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full architecture, data model,
-API surface, and build roadmap, and [docs/PLAN.md](docs/PLAN.md) for the
-phased build plan and current status.
+API surface, and build roadmap, [docs/PLAN.md](docs/PLAN.md) for the
+phased build plan and current status, [docs/run.md](docs/run.md) for the
+demo walkthrough, and [docs/README.md](docs/README.md) for what every other
+doc is for.
 
 ## Running locally
 
@@ -29,7 +31,9 @@ cd backend
 python -m venv .venv
 ./.venv/Scripts/activate   # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -e ".[dev]"
-alembic upgrade head        # once migrations exist (Phase 1+)
+alembic upgrade head
+python scripts/seed_demo.py # demo chain: likes Python -> Django -> FastAPI
+python -m app.ml.train      # optional: SHAP trust breakdowns (see .env's ML_BOOTSTRAP_ON_SYNTHETIC)
 uvicorn app.main:app --reload
 
 # 4. Frontend (separate terminal)
@@ -40,6 +44,23 @@ npm run dev
 
 - Backend: http://localhost:8000 (`/health` should return `{"status": "ok"}`)
 - Frontend: http://localhost:5173 (`/` chat, `/admin/*` dashboard)
+
+## Tests
+
+```bash
+cd backend
+pytest
+```
+
+- `tests/unit/` needs nothing running.
+- `tests/integration/` runs against real Postgres + pgvector (the
+  docker-compose service, in a separate `recovermem_test` database that the
+  fixtures create and migrate automatically). Each test starts from empty
+  tables. If Postgres isn't reachable these tests are **skipped**, not
+  failed; set `REQUIRE_DB=1` (e.g. in CI) to make that a failure, and
+  `TEST_DATABASE_URL` to point at a different server.
+
+## Deployment note
 
 Don't run the backend with `uvicorn ... --workers N` (N > 1) without
 accounting for it first: each worker is a separate process that loads its
