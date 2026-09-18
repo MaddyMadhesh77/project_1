@@ -1,4 +1,5 @@
-import type { TrustBreakdown } from '../../lib/api'
+import type { ModelStatus, TrustBreakdown } from '../../lib/api'
+import { useModelStatus } from '../../lib/queries'
 
 // Phase 2 rule-scorer keys (always available, cold start / below
 // min_training_samples) and Phase 7 SHAP feature-contribution keys (once the
@@ -35,12 +36,44 @@ interface TrustBreakdownBarsProps {
 // ones to the left. Colors are the dataviz skill's validated diverging
 // blue/red pair (references/palette.md), never the status palette (that's
 // reserved for the trusted/low_trust/quarantined pill).
+function scorerLabel(isShap: boolean, status: ModelStatus | undefined): { title: string; detail?: string } {
+  if (!isShap) return { title: 'Rule engine' }
+  // The badge reflects the model loaded NOW; a SHAP breakdown is only ever
+  // produced by an RF that cleared the gate when this version was scored.
+  if (status?.mode === 'rf_bootstrap') {
+    return {
+      title: 'RandomForest + SHAP · bootstrap model',
+      detail: `Trained on ${status.n_samples} examples (${status.n_real_samples} real). Real rollback outcomes replace this once ${status.min_training_samples} exist.`,
+    }
+  }
+  if (status?.mode === 'rf_real') {
+    return {
+      title: 'RandomForest + SHAP',
+      detail: `Trained on ${status.n_samples} examples, ${status.n_real_samples} from real rollback outcomes.`,
+    }
+  }
+  return { title: 'RandomForest + SHAP' }
+}
+
 export default function TrustBreakdownBars({ breakdown, total }: TrustBreakdownBarsProps) {
+  const { data: status } = useModelStatus()
   const entries = Object.entries(breakdown)
   const maxAbs = Math.max(1, ...entries.map(([, value]) => Math.abs(value)))
+  // SHAP breakdowns carry a "baseline" key; rule breakdowns never do. SHAP
+  // bars sum to the model's own 100*P(safe), not to the stored score, which
+  // blends that with the rule engine -- so both numbers are shown.
+  const isShap = 'baseline' in breakdown
+  const modelScore = Math.round(entries.reduce((sum, [, value]) => sum + value, 0) * 10) / 10
+  const scorer = scorerLabel(isShap, status)
 
   return (
     <div className="space-y-2">
+      <div className="mb-1">
+        <span className="inline-block rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+          {scorer.title}
+        </span>
+        {scorer.detail && <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{scorer.detail}</p>}
+      </div>
       {entries.map(([key, value]) => {
         const pct = (Math.abs(value) / maxAbs) * 50
         const positive = value >= 0
@@ -69,13 +102,28 @@ export default function TrustBreakdownBars({ breakdown, total }: TrustBreakdownB
           </div>
         )
       })}
+      {isShap && (
+        <div className="flex items-center gap-3 border-t border-neutral-200 pt-2 text-sm dark:border-neutral-800">
+          <span className="w-40 shrink-0 text-neutral-600 dark:text-neutral-400">Model score (sum of bars)</span>
+          <div className="flex-1" />
+          <span className="w-16 shrink-0 text-right tabular-nums text-neutral-700 dark:text-neutral-300">{modelScore}</span>
+        </div>
+      )}
       <div className="flex items-center gap-3 border-t border-neutral-200 pt-2 text-sm dark:border-neutral-800">
-        <span className="w-40 shrink-0 font-semibold text-neutral-800 dark:text-neutral-100">Total</span>
+        <span className="w-40 shrink-0 font-semibold text-neutral-800 dark:text-neutral-100">
+          {isShap ? 'Final score' : 'Total'}
+        </span>
         <div className="flex-1" />
         <span className="w-16 shrink-0 text-right tabular-nums font-semibold text-neutral-900 dark:text-neutral-100">
           {total}
         </span>
       </div>
+      {isShap && (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Final score blends the model score with the rule engine&rsquo;s
+          {status ? ` (rule weight ${status.rf_blend_weight})` : ''}.
+        </p>
+      )}
     </div>
   )
 }

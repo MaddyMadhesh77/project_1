@@ -117,6 +117,15 @@ class Settings(BaseSettings):
     # real-world signal.
     min_training_samples: int = 50
 
+    # Demo/bootstrap escape hatch for the gate above: when true, a model.pkl
+    # trained on at least min_training_samples examples in TOTAL (so the
+    # 60-example synthetic set alone qualifies) is allowed to score, reported
+    # as mode "rf_bootstrap" by GET /trust/model so the UI can label it as
+    # synthetic-trained rather than learned from real outcomes. Off by default:
+    # a deployment should only trust the RF once real rollback-labelled signal
+    # exists. Turn it on for the demo, where there are no real outcomes yet.
+    ml_bootstrap_on_synthetic: bool = False
+
     # conversation_recency feature (services/features.py): 1.0 while a
     # conversation's gap-since-last-stored-memory is within
     # *_full_window_seconds, decaying linearly to *_floor once the gap

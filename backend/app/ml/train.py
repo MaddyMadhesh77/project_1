@@ -14,9 +14,11 @@ Trains a RandomForestClassifier on:
 Serializes the trained model + metadata to app/ml/model.pkl (gitignored --
 regenerate locally by running this script). services/trust_engine.py loads
 this file if present and only lets it influence scoring once its recorded
-`n_samples` clears Settings.min_training_samples; until this script has been
-run at least once, scoring is 100% the Phase 2 rule engine -- cold start,
-always demoable.
+`n_real_samples` (real rollback-labelled outcomes) clears
+Settings.min_training_samples -- or, with ML_BOOTSTRAP_ON_SYNTHETIC=true,
+once the synthetic+real total does ("rf_bootstrap" mode, for demos). Until
+this script has been run at least once, scoring is 100% the Phase 2 rule
+engine -- cold start, always demoable.
 
 This is also the "documented/manual retrain trigger" PLAN.md Phase 7 asks
 for at minimum: re-run this after enough real trust_events/rollback_events
@@ -48,7 +50,16 @@ _LABEL_TO_INT = {"safe": 1, "poisoned": 0}
 Example = tuple[list[float], int]
 
 
+class TrainingDataMissingError(FileNotFoundError):
+    pass
+
+
 def _load_synthetic() -> list[Example]:
+    if not _DATA_PATH.exists():
+        raise TrainingDataMissingError(
+            f"synthetic training set not found at {_DATA_PATH} -- it ships with the repo "
+            "(app/ml/data/synthetic_examples.json); restore it from git before training."
+        )
     examples = json.loads(_DATA_PATH.read_text())
     return [
         ([float(ex["features"][name]) for name in FEATURE_NAMES], _LABEL_TO_INT[ex["label"]]) for ex in examples
@@ -65,7 +76,7 @@ async def _load_real_examples() -> list[Example]:
         import sqlalchemy as sa
 
         from app.db.session import async_session_factory
-        from app.models import RollbackOutcome, TrustEvent
+        from app.models import RollbackEvent, RollbackOutcome, TrustEvent
     except Exception as exc:  # pragma: no cover -- import-time failure only
         print(f"  (skipping real logged data -- import failed: {exc})")
         return []
@@ -73,14 +84,26 @@ async def _load_real_examples() -> list[Example]:
     try:
         async with async_session_factory() as db:
             outcome_rows = (
-                await db.execute(sa.select(RollbackOutcome.version_id, RollbackOutcome.outcome))
+                await db.execute(
+                    sa.select(RollbackOutcome.version_id, RollbackOutcome.outcome, RollbackEvent.root_version_id)
+                    .join(RollbackEvent, RollbackEvent.rollback_id == RollbackOutcome.rollback_id)
+                    # Oldest first, so when a version was judged by several
+                    # rollback runs the most recent verdict deterministically
+                    # wins (it reflects the most recent knowledge).
+                    .order_by(RollbackEvent.started_at, RollbackOutcome.outcome_index)
+                )
             ).all()
             # kept => the rollback re-confirmed this version was fine despite
             # its poisoned ancestor => safe (1). reverted/removed => it didn't
-            # survive re-validation => poisoned (0).
-            label_by_version_id: dict[uuid.UUID, int] = {
-                version_id: (1 if outcome == "kept" else 0) for version_id, outcome in outcome_rows
-            }
+            # survive re-validation => poisoned (0). superseded => never
+            # re-validated (a newer version had already replaced it), so no
+            # label -- unless it's the poisoned version itself, which is
+            # poisoned (0) by definition.
+            label_by_version_id: dict[uuid.UUID, int] = {}
+            for version_id, outcome, root_version_id in outcome_rows:
+                if outcome == "superseded" and version_id != root_version_id:
+                    continue
+                label_by_version_id[version_id] = 1 if outcome == "kept" else 0
 
             if not label_by_version_id:
                 return []
@@ -90,28 +113,49 @@ async def _load_real_examples() -> list[Example]:
                     sa.select(TrustEvent)
                     .where(TrustEvent.version_id.in_(list(label_by_version_id)))
                     .where(TrustEvent.event_type.in_(["created", "updated"]))
+                    .order_by(TrustEvent.created_at)
                 )
             ).scalars().all()
     except Exception as exc:
         print(f"  (skipping real logged data -- DB unreachable: {exc})")
         return []
 
+    return build_real_examples(
+        [(te.version_id, (te.details or {}).get("features")) for te in trust_event_rows], label_by_version_id
+    )
+
+
+def build_real_examples(
+    scored_events: list[tuple[uuid.UUID, dict | None]], label_by_version_id: dict[uuid.UUID, int]
+) -> list[Example]:
+    """One example per labelled version, from its admission-time scoring
+    (the first created/updated event, given oldest-first input). A version
+    with several such events used to contribute one duplicate row each."""
     examples: list[Example] = []
-    for te in trust_event_rows:
-        raw_features = (te.details or {}).get("features")
-        if not raw_features:
+    seen: set[uuid.UUID] = set()
+    for version_id, raw_features in scored_events:
+        label = label_by_version_id.get(version_id)
+        if not raw_features or label is None or version_id in seen:
             continue
-        label = label_by_version_id.get(te.version_id)
-        if label is None:
-            continue
+        seen.add(version_id)
         examples.append(([float(raw_features[name]) for name in FEATURE_NAMES], label))
     return examples
 
 
+def _fit(X: list[list[float]], y: list[int]) -> tuple[RandomForestClassifier, float]:
+    # max_depth caps overfitting on a dataset this small (a handful of
+    # deep trees would just memorize individual points); n_estimators=200
+    # keeps SHAP's per-tree averaging stable; random_state pins this to a
+    # reproducible model, matching this project's other deterministic seeds
+    # (scripts/seed_demo.py's fixed conversation_id, the RRF constant, etc).
+    model = RandomForestClassifier(n_estimators=200, max_depth=6, random_state=42, class_weight="balanced")
+    model.fit(X, y)
+    return model, model.score(X, y)
+
+
 async def run_training() -> dict:
     """The actual training run, factored out of main() so
-    app/api/routes/trust.py's POST /trust/retrain (bugs.md #10: "no endpoint
-    ... to trigger retraining") can call it in-process instead of shelling
+    app/api/routes/trust.py's POST /trust/retrain can call it in-process instead of shelling
     out to `python -m app.ml.train`. Returns a JSON-able summary instead of
     printing -- main() below does the printing for the CLI entry point.
     """
@@ -122,14 +166,9 @@ async def run_training() -> dict:
     X = [row for row, _ in all_examples]
     y = [label for _, label in all_examples]
 
-    # max_depth caps overfitting on a dataset this small (a handful of
-    # deep trees would just memorize individual points); n_estimators=200
-    # keeps SHAP's per-tree averaging stable; random_state pins this to a
-    # reproducible model, matching this project's other deterministic seeds
-    # (scripts/seed_demo.py's fixed conversation_id, the RRF constant, etc).
-    model = RandomForestClassifier(n_estimators=200, max_depth=6, random_state=42, class_weight="balanced")
-    model.fit(X, y)
-    train_accuracy = model.score(X, y)
+    # CPU-bound and synchronous: run in a worker thread so POST /trust/retrain
+    # doesn't stall every other request on the server while it fits.
+    model, train_accuracy = await asyncio.to_thread(_fit, X, y)
 
     trained_at = datetime.now(timezone.utc).isoformat()
     bundle = {
@@ -193,6 +232,21 @@ async def main() -> None:
     )
     print(f"Saved to {_MODEL_PATH}")
 
+    from app.services import trust_engine
+
+    status = trust_engine.model_status(get_settings())
+    if status["mode"] == "rule_only":
+        print(
+            f"Scorer mode: rule_only -- the RF stays off until {status['min_training_samples']} REAL "
+            f"rollback-labelled samples exist (have {status['n_real_samples']}). For a demo, set "
+            "ML_BOOTSTRAP_ON_SYNTHETIC=true to let the synthetic-trained model score."
+        )
+    else:
+        print(f"Scorer mode: {status['mode']} -- new candidates get a blended RF+SHAP trust score.")
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except TrainingDataMissingError as exc:
+        raise SystemExit(f"error: {exc}") from None

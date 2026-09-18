@@ -5,7 +5,7 @@ import pickle
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.core.config import Settings, get_settings
 from app.services import model_integrity
@@ -172,6 +172,39 @@ def _shap_breakdown(features: FeatureVector, bundle: ModelBundle) -> tuple[float
     return proba_safe, breakdown
 
 
+ScorerMode = Literal["rule_only", "rf_bootstrap", "rf_real"]
+
+
+def _rf_mode(bundle: ModelBundle | None, settings: Settings) -> ScorerMode | None:
+    """Which RF mode (if any) is allowed to score. rf_real: enough real
+    rollback-labelled samples. rf_bootstrap: only with
+    settings.ml_bootstrap_on_synthetic, when the total (synthetic + real)
+    clears the same bar. None: rule engine only."""
+    if bundle is None:
+        return None
+    if bundle.n_real_samples >= settings.min_training_samples:
+        return "rf_real"
+    if settings.ml_bootstrap_on_synthetic and bundle.n_samples >= settings.min_training_samples:
+        return "rf_bootstrap"
+    return None
+
+
+def model_status(settings: Settings) -> dict[str, Any]:
+    """What GET /trust/model reports: which scorer new candidates get, and
+    what the loaded model (if any) was trained on."""
+    bundle = _load_bundle()
+    return {
+        "mode": _rf_mode(bundle, settings) or "rule_only",
+        "model_loaded": bundle is not None,
+        "n_samples": bundle.n_samples if bundle else 0,
+        "n_real_samples": bundle.n_real_samples if bundle else 0,
+        "trained_at": bundle.trained_at if bundle else None,
+        "min_training_samples": settings.min_training_samples,
+        "bootstrap_on_synthetic": settings.ml_bootstrap_on_synthetic,
+        "rf_blend_weight": settings.rf_blend_weight,
+    }
+
+
 def score_candidate(features: FeatureVector, settings: Settings) -> TrustResult:
     """Blend of the always-available rule scorer and (once trained on enough
     *real* samples) the RandomForest+SHAP layer (DESIGN.md 6.5). Below
@@ -187,11 +220,13 @@ def score_candidate(features: FeatureVector, settings: Settings) -> TrustResult:
     is "don't trust the learned model until it's seen enough real-world
     signal"; the synthetic set exists to make the model *fittable* at all
     before any real data exists, not to count toward that trust bar.
+    settings.ml_bootstrap_on_synthetic deliberately relaxes this for demos
+    (see _rf_mode).
     """
     rule_result = _score_rule(features, settings)
 
     bundle = _load_bundle()
-    if bundle is None or bundle.n_real_samples < settings.min_training_samples:
+    if bundle is None or _rf_mode(bundle, settings) is None:
         return rule_result
 
     proba_safe, shap_breakdown = _shap_breakdown(features, bundle)

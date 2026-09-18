@@ -10,7 +10,9 @@ from app.services.trust_engine import ModelBundle
 
 
 def _settings(**overrides):
-    return Settings(**overrides)
+    # Pin bootstrap mode off unless a test opts in: Settings() also reads the
+    # local .env, which turns it on for the demo.
+    return Settings(**{"ml_bootstrap_on_synthetic": False, **overrides})
 
 
 def _contradiction_features() -> FeatureVector:
@@ -159,6 +161,46 @@ def test_real_samples_clearing_the_gate_activates_blending(monkeypatch):
     assert set(blended.breakdown) == set(FEATURE_NAMES) | {"baseline"}
 
 
+def test_bootstrap_flag_lets_synthetic_only_model_score(monkeypatch):
+    bundle = _trained_bundle(n_samples=60, n_real_samples=0)
+    monkeypatch.setattr(trust_engine, "_load_bundle", lambda: bundle)
+
+    settings = _settings(min_training_samples=50, ml_bootstrap_on_synthetic=True)
+    result = trust_engine.score_candidate(_contradiction_features(), settings)
+
+    assert set(result.breakdown) == set(FEATURE_NAMES) | {"baseline"}
+    assert trust_engine.model_status(settings)["mode"] == "rf_bootstrap"
+
+
+def test_bootstrap_flag_still_requires_total_to_clear_the_gate(monkeypatch):
+    bundle = _trained_bundle(n_samples=30, n_real_samples=0)
+    monkeypatch.setattr(trust_engine, "_load_bundle", lambda: bundle)
+
+    settings = _settings(min_training_samples=50, ml_bootstrap_on_synthetic=True)
+    features = _contradiction_features()
+
+    assert trust_engine.score_candidate(features, settings) == trust_engine._score_rule(features, settings)
+    assert trust_engine.model_status(settings)["mode"] == "rule_only"
+
+
+def test_model_status_reports_rf_real_over_bootstrap(monkeypatch):
+    bundle = _trained_bundle(n_samples=200, n_real_samples=50)
+    monkeypatch.setattr(trust_engine, "_load_bundle", lambda: bundle)
+
+    status = trust_engine.model_status(_settings(min_training_samples=50, ml_bootstrap_on_synthetic=True))
+
+    assert status["mode"] == "rf_real"
+    assert status["n_real_samples"] == 50
+
+
+def test_model_status_without_model_file(monkeypatch):
+    monkeypatch.setattr(trust_engine, "_load_bundle", lambda: None)
+
+    status = trust_engine.model_status(_settings(ml_bootstrap_on_synthetic=True))
+
+    assert status == {**status, "mode": "rule_only", "model_loaded": False, "n_samples": 0, "trained_at": None}
+
+
 def test_load_bundle_returns_none_when_model_file_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(trust_engine, "_MODEL_PATH", tmp_path / "does_not_exist.pkl")
     trust_engine.clear_model_cache()
@@ -266,3 +308,20 @@ def test_load_bundle_with_signing_key_rejects_a_missing_signature(tmp_path, monk
         assert trust_engine._load_bundle() is None
     finally:
         trust_engine.clear_model_cache()
+
+
+def test_real_examples_are_one_per_version():
+    # Regression (audit B16): a version with several created/updated events
+    # used to contribute one duplicate training row per event.
+    import uuid
+
+    from app.ml.train import build_real_examples
+
+    features = {name: 0.5 for name in FEATURE_NAMES}
+    labelled, unlabelled = uuid.uuid4(), uuid.uuid4()
+    examples = build_real_examples(
+        [(labelled, features), (labelled, {**features, "contradiction": 1.0}), (unlabelled, features), (labelled, None)],
+        {labelled: 0},
+    )
+
+    assert examples == [([0.5] * len(FEATURE_NAMES), 0)]
