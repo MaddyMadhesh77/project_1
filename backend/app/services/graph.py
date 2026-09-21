@@ -30,11 +30,16 @@ _cached_graph: nx.DiGraph | None = None
 _cached_at: float = 0.0
 
 
-async def load_graph(db: AsyncSession) -> nx.DiGraph:
+async def load_graph(db: AsyncSession, *, use_cache: bool = True) -> nx.DiGraph:
+    """use_cache=False always reads the edges from this session. Rollback
+    needs that: record_edge invalidates the cache before its transaction
+    commits, so a concurrent reload can cache a graph missing a just-written
+    edge for up to the TTL -- and a rollback using it would miss a memory
+    just derived from the poison. Display-only callers can use the cache."""
     global _cached_graph, _cached_at
 
     now = time.monotonic()
-    if _cached_graph is not None and (now - _cached_at) < _CACHE_TTL_SECONDS:
+    if use_cache and _cached_graph is not None and (now - _cached_at) < _CACHE_TTL_SECONDS:
         return _cached_graph
 
     rows = (await db.execute(sa.select(DependencyEdge.parent_version_id, DependencyEdge.child_version_id))).all()

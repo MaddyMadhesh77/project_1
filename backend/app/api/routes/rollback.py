@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models import RollbackEvent, RollbackOutcome
-from app.services import rollback
+from app.services import rollback, versioning
 
 router = APIRouter(tags=["rollback"])
 
@@ -24,7 +24,7 @@ class NodeOutcomeOut(BaseModel):
     version_id: uuid.UUID
     memory_id: uuid.UUID
     text: str
-    outcome: str  # kept | reverted | removed
+    outcome: str  # kept | reverted | removed | superseded
     new_version_id: uuid.UUID
     trust_score: float
     reason: str
@@ -57,6 +57,8 @@ async def trigger_rollback(
         result = await rollback.run_rollback(
             db, poisoned_version_id=version_id, triggered_by=body.triggered_by, settings=settings
         )
+    except versioning.ConcurrentUpdateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

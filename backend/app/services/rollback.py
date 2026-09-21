@@ -27,17 +27,50 @@ from app.services.trust_engine import TrustResult, score_candidate
 OUTCOME_KEPT = "kept"
 OUTCOME_REVERTED = "reverted"
 OUTCOME_REMOVED = "removed"
+# Not touched: a newer version of the memory already replaced this one. Used
+# for the poisoned version itself when it was already superseded (its newer
+# state is left in place while its descendants are still recovered), and for
+# stale versions of descendants. Carries no safe/poisoned verdict for training.
+OUTCOME_SUPERSEDED = "superseded"
 
 
-def _is_tainted(parent_id: uuid.UUID, poisoned_version_id: uuid.UUID, outcomes: dict[uuid.UUID, "NodeOutcome"]) -> bool:
-    """A parent no longer counts as valid support once it's the poisoned
-    version itself, or once *this rollback run* has decided to remove it
-    (an already-reverted parent still counts -- its memory survived, just
-    with different content)."""
-    if parent_id == poisoned_version_id:
-        return True
-    outcome = outcomes.get(parent_id)
-    return outcome is not None and outcome.outcome == OUTCOME_REMOVED
+@dataclass(frozen=True)
+class ParentRef:
+    version_id: uuid.UUID
+    memory_id: uuid.UUID
+    version_number: int
+
+
+def valid_sources(
+    parents: list[ParentRef], poisoned_version_id: uuid.UUID, removed_memory_ids: set[uuid.UUID]
+) -> list[ParentRef]:
+    """The parent memories that still independently support a node.
+
+    Support is judged per parent *memory*, not per parent version: when a
+    memory is updated, carry_forward_edges copies its outgoing edges onto the
+    new version, so a child ends up with edges from several versions of the
+    same memory. Retrieval only ever sees a memory's current version, so the
+    child was really derived from exactly one of them -- the earliest one it
+    has an edge from; the later edges are copies. That source is invalid if
+    it is the poisoned version, or if its memory was removed earlier in this
+    rollback run (a reverted memory still counts -- it survived, with
+    different content).
+
+    Without this, a copy of the poisoned edge on a newer version of the same
+    memory counted as "independent" support and kept the very children
+    derived from the poison -- and a removed memory's older versions still
+    counted as support.
+    """
+    sources: dict[uuid.UUID, ParentRef] = {}
+    for parent in parents:
+        current = sources.get(parent.memory_id)
+        if current is None or parent.version_number < current.version_number:
+            sources[parent.memory_id] = parent
+    return [
+        source
+        for source in sources.values()
+        if source.version_id != poisoned_version_id and source.memory_id not in removed_memory_ids
+    ]
 
 
 def classify_outcome(*, has_independent_support: bool, has_prior_version: bool) -> str:
@@ -55,8 +88,8 @@ def processing_order(dep_graph: nx.DiGraph, poisoned_version_id: uuid.UUID, desc
     """Topological order over {poisoned_version_id} ∪ descendants, poisoned
     version first. Processing in this order is what lets a downstream node's
     "does it still have independent support" check see upstream nodes'
-    already-decided outcomes for this same rollback run (see _is_tainted) --
-    e.g. if B is reverted and C solely depended on B, C must lose B as valid
+    already-decided outcomes for this same rollback run (see valid_sources) --
+    e.g. if B is removed and C solely depended on B, C must lose B as valid
     support too, not just the original poisoned root.
     """
     nodes = {poisoned_version_id, *descendant_ids}
@@ -95,14 +128,23 @@ class RollbackResult:
     merkle_root: str
 
 
-async def _prior_version(db: AsyncSession, version: MemoryVersion) -> MemoryVersion | None:
-    if version.version_number <= 1:
-        return None
+async def _clean_prior_version(
+    db: AsyncSession, version: MemoryVersion, tainted_version_ids: set[uuid.UUID]
+) -> MemoryVersion | None:
+    """The latest earlier version of this memory that is neither the poisoned
+    version nor derived from it. Reverting to the immediately previous
+    version isn't enough: a memory created from the poison carries its
+    dependency edges onto every later version, so its older versions are just
+    as tainted, and reverting to one would restore poison-derived content."""
     result = await db.execute(
-        sa.select(MemoryVersion).where(
+        sa.select(MemoryVersion)
+        .where(
             MemoryVersion.memory_id == version.memory_id,
-            MemoryVersion.version_number == version.version_number - 1,
+            MemoryVersion.version_number < version.version_number,
+            MemoryVersion.version_id.not_in(tainted_version_ids) if tainted_version_ids else sa.true(),
         )
+        .order_by(MemoryVersion.version_number.desc())
+        .limit(1)
     )
     return result.scalars().first()
 
@@ -115,35 +157,64 @@ async def _process_node(
     dep_graph: nx.DiGraph,
     outcomes: dict[uuid.UUID, NodeOutcome],
     poisoned_version_id: uuid.UUID,
+    tainted_version_ids: set[uuid.UUID],
     settings: Settings,
     rollback_marker: str,
 ) -> NodeOutcome:
-    version = await db.get(MemoryVersion, version_id)
-    memory = await db.get(Memory, version.memory_id)
+    # populate_existing: decide from committed state, not this session's cache.
+    version = await db.get(MemoryVersion, version_id, populate_existing=True)
+    memory = await db.get(Memory, version.memory_id, populate_existing=True)
 
     # Only the current version of a memory reflects what's actually believed
-    # right now -- a stale historical version referenced by an old edge has
-    # already been superseded by something else and rollback shouldn't touch
-    # (or revert past) that newer state.
-    if not is_root and memory.current_version_id != version_id:
+    # right now. A stale version -- including the poisoned version itself, if
+    # it was already replaced -- is never rewritten: writing onto its memory
+    # would revert past (and destroy) the newer state. Its descendants are
+    # still processed; their own current versions carry the dependency
+    # forward via carry_forward_edges.
+    if memory.current_version_id != version_id:
+        current = await db.get(MemoryVersion, memory.current_version_id)
+        reason = (
+            f"poisoned version already superseded by version {current.version_number}; newer state left in place"
+            if is_root
+            else f"already superseded by version {current.version_number} -- not touched"
+        )
         return NodeOutcome(
             version_id=version_id,
             memory_id=memory.memory_id,
             text=version.text,
-            outcome=OUTCOME_KEPT,
+            outcome=OUTCOME_SUPERSEDED,
             new_version_id=memory.current_version_id,
             trust_score=float(version.trust_score),
-            reason="already superseded by a newer version -- not touched",
+            reason=reason,
         )
 
+    # Already removed by an earlier rollback (e.g. the same rollback
+    # triggered twice): there's nothing left to undo. Re-processing it would
+    # just write another identical "removed" version.
+    if not is_root and memory.status == "rolled_back":
+        return NodeOutcome(
+            version_id=version_id,
+            memory_id=memory.memory_id,
+            text=version.text,
+            outcome=OUTCOME_REMOVED,
+            new_version_id=version_id,
+            trust_score=float(version.trust_score),
+            reason="already removed by an earlier rollback -- not rewritten",
+        )
+
+    valid_parents: list[ParentRef] = []
     if is_root:
         has_independent_support = False  # the root IS the poison; never "kept"
     else:
-        parent_ids = list(dep_graph.predecessors(version_id))
-        valid_parents = [p for p in parent_ids if not _is_tainted(p, poisoned_version_id, outcomes)]
+        parents = []
+        for parent_id in dep_graph.predecessors(version_id):
+            parent = await db.get(MemoryVersion, parent_id)
+            parents.append(ParentRef(parent.version_id, parent.memory_id, parent.version_number))
+        removed_memory_ids = {o.memory_id for o in outcomes.values() if o.outcome == OUTCOME_REMOVED}
+        valid_parents = valid_sources(parents, poisoned_version_id, removed_memory_ids)
         has_independent_support = len(valid_parents) > 0
 
-    prior = await _prior_version(db, version)
+    prior = await _clean_prior_version(db, version, tainted_version_ids)
     outcome_kind = classify_outcome(has_independent_support=has_independent_support, has_prior_version=prior is not None)
 
     trust_result: TrustResult | None = None
@@ -156,7 +227,7 @@ async def _process_node(
     }
 
     if outcome_kind == OUTCOME_KEPT:
-        valid_parent_versions = [await db.get(MemoryVersion, p) for p in valid_parents]
+        valid_parent_versions = [await db.get(MemoryVersion, p.version_id) for p in valid_parents]
         best_parent = max(valid_parent_versions, key=lambda p: float(p.trust_score))
         features = FeatureVector(
             similarity=_cosine(list(version.embedding), list(best_parent.embedding)),
@@ -188,7 +259,7 @@ async def _process_node(
             f"reverted to version {prior.version_number} after rollback of poisoned version {poisoned_version_id}"
         )
         text, embedding = prior.text, list(prior.embedding)
-        reason = f"solely dependent on the poisoned version; reverted to version {prior.version_number}"
+        reason = f'solely dependent on the poisoned version; reverted to version {prior.version_number} ("{prior.text}")'
     else:
         # No trust_engine call here: there's nothing left to score against --
         # no independent support and no prior state to fall back on -- so
@@ -224,16 +295,17 @@ async def _process_node(
         trust_breakdown=trust_result.breakdown,
         decision=trust_result.decision,
         provenance_fields=provenance_fields,
+        # STATUS_BY_DECISION would otherwise mark a removed memory
+        # "quarantined" -- same bucket a fresh contradicted chat statement
+        # lands in. "rolled_back" is the status DESIGN.md 5 reserves for a
+        # memory purged as a consequence of an *ancestor's* rollback. Passed
+        # into the write itself: setting it afterwards (after a db.refresh
+        # that discarded write_version's own pending changes) only stuck
+        # thanks to an incidental autoflush.
+        status="rolled_back" if outcome_kind == OUTCOME_REMOVED else None,
+        # Refuse to overwrite a concurrent update made after the check above.
+        expected_current_version_id=version_id,
     )
-
-    if outcome_kind == OUTCOME_REMOVED:
-        # STATUS_BY_DECISION would otherwise mark this "quarantined" -- same
-        # bucket a fresh contradicted chat statement lands in. "rolled_back"
-        # is the status DESIGN.md 5 reserves specifically for this case: a
-        # memory purged as a consequence of an *ancestor's* rollback, not a
-        # user statement that was itself untrustworthy.
-        await db.refresh(memory)
-        memory.status = "rolled_back"
 
     db.add(
         TrustEvent(
@@ -247,7 +319,11 @@ async def _process_node(
     return NodeOutcome(
         version_id=version_id,
         memory_id=memory.memory_id,
-        text=text,
+        # The affected version's own content (matching version_id), not the
+        # post-rollback content: a reverted node used to read "preference:
+        # Python -> Reverted", hiding what was actually undone. The restored
+        # content is named in `reason`.
+        text=version.text,
         outcome=outcome_kind,
         new_version_id=new_version.version_id,
         trust_score=trust_result.score,
@@ -255,14 +331,27 @@ async def _process_node(
     )
 
 
+# Arbitrary constant key for pg_advisory_xact_lock.
+_ROLLBACK_LOCK_KEY = 0x524F4C4C  # "ROLL"
+
+
 async def run_rollback(db: AsyncSession, *, poisoned_version_id: uuid.UUID, triggered_by: str, settings: Settings) -> RollbackResult:
+    # One rollback at a time, held until this transaction ends. Two
+    # concurrent rollbacks (a double-click, two tabs) used to both act on the
+    # same pre-rollback state; now the second waits and then sees the first's
+    # result -- e.g. its target already superseded. Rollbacks are rare admin
+    # actions, so serializing them costs nothing and avoids lock-ordering
+    # deadlocks between overlapping dependency chains.
+    await db.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": _ROLLBACK_LOCK_KEY})
     started_at = datetime.now(timezone.utc)
 
-    poisoned_version = await db.get(MemoryVersion, poisoned_version_id)
+    poisoned_version = await db.get(MemoryVersion, poisoned_version_id, populate_existing=True)
     if poisoned_version is None:
         raise ValueError(f"version {poisoned_version_id} not found")
 
-    dep_graph = await graph_service.load_graph(db)
+    # Always fresh, never the TTL cache: a stale graph would silently miss
+    # descendants of the poison (see load_graph).
+    dep_graph = await graph_service.load_graph(db, use_cache=False)
     descendant_ids = graph_service.descendants(dep_graph, poisoned_version_id)
     order = processing_order(dep_graph, poisoned_version_id, descendant_ids)
 
@@ -276,6 +365,7 @@ async def run_rollback(db: AsyncSession, *, poisoned_version_id: uuid.UUID, trig
             dep_graph=dep_graph,
             outcomes=outcomes,
             poisoned_version_id=poisoned_version_id,
+            tainted_version_ids={poisoned_version_id, *descendant_ids},
             settings=settings,
             rollback_marker="rollback_engine",
         )

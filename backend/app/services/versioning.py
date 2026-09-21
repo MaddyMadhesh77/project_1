@@ -16,6 +16,18 @@ from app.services.hashing import compute_content_hash
 STATUS_BY_DECISION = {"store": "trusted", "review": "low_trust", "reject": "quarantined"}
 
 
+class ConcurrentUpdateError(Exception):
+    """The memory's current version changed between the caller's read and
+    this write (e.g. a chat update landed mid-rollback)."""
+
+    def __init__(self, memory_id: uuid.UUID, expected: uuid.UUID, actual: uuid.UUID | None):
+        self.memory_id, self.expected, self.actual = memory_id, expected, actual
+        super().__init__(
+            f"memory {memory_id} changed while this operation was running (expected current version "
+            f"{expected}, found {actual}); retry it"
+        )
+
+
 async def write_version(
     db: AsyncSession,
     *,
@@ -26,6 +38,8 @@ async def write_version(
     trust_breakdown: dict,
     decision: str,
     provenance_fields: dict,
+    status: str | None = None,
+    expected_current_version_id: uuid.UUID | None = None,
 ) -> MemoryVersion:
     """Insert a new memory version -- rows are never mutated (DESIGN.md 6.6).
 
@@ -39,7 +53,7 @@ async def write_version(
     revert *from*.
     """
     if memory_id is None:
-        memory = Memory(status=STATUS_BY_DECISION[decision])
+        memory = Memory(status=status or STATUS_BY_DECISION[decision])
         db.add(memory)
         await db.flush()
         version_number = 1
@@ -50,14 +64,27 @@ async def write_version(
         # Without the row lock, two concurrent updates to the same memory
         # both read the same max and try to insert the same version_number,
         # tripping the unique constraint and surfacing as a 500.
+        #
+        # populate_existing: once the lock is granted, re-read the row instead
+        # of reusing this session's cached copy. Without it, a writer that
+        # waited on the lock still saw the *pre-wait* current_version_id, left
+        # the other writer's new version active and inserted a second active
+        # one (caught by uq_memory_versions_one_active_per_memory as a 500).
         memory = (
-            await db.execute(sa.select(Memory).where(Memory.memory_id == memory_id).with_for_update())
+            await db.execute(
+                sa.select(Memory)
+                .where(Memory.memory_id == memory_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
         ).scalar_one_or_none()
         if memory is None:
             raise ValueError(f"memory {memory_id} not found")
+        if expected_current_version_id is not None and memory.current_version_id != expected_current_version_id:
+            raise ConcurrentUpdateError(memory_id, expected_current_version_id, memory.current_version_id)
         prior_version_id = memory.current_version_id
         if prior_version_id is not None:
-            prior = await db.get(MemoryVersion, prior_version_id)
+            prior = await db.get(MemoryVersion, prior_version_id, populate_existing=True)
             if prior is not None:
                 prior.is_active = False
         max_version_number = (
@@ -95,7 +122,10 @@ async def write_version(
     version.content_hash = compute_content_hash(text, list(version.embedding), provenance_fields)
 
     memory.current_version_id = version.version_id
-    memory.status = STATUS_BY_DECISION[decision]
+    # `status` overrides the decision-derived rollup, e.g. rollback's
+    # "rolled_back" -- set here, in the same write, rather than patched onto
+    # the memory afterwards.
+    memory.status = status or STATUS_BY_DECISION[decision]
     memory.updated_at = datetime.now(timezone.utc)
 
     db.add(Provenance(version_id=version.version_id, **provenance_fields))

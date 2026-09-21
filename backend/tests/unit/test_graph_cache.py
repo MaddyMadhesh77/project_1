@@ -79,3 +79,13 @@ async def test_record_edge_invalidates_the_cache(monkeypatch):
     await graph_module.record_edge(db, parent_version_id=a, child_version_id=b)
 
     assert graph_module._cached_graph is None
+
+
+async def test_load_graph_without_cache_always_reads_from_the_db(monkeypatch):
+    # Rollback relies on this: a cached graph can be missing a just-written edge.
+    _reset_cache(monkeypatch)
+    db = _FakeSession([_row(uuid.uuid4(), uuid.uuid4())])
+    await graph_module.load_graph(db)
+    await graph_module.load_graph(db, use_cache=False)
+    await graph_module.load_graph(db, use_cache=False)
+    assert db.execute_count == 3

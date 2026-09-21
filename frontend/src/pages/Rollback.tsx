@@ -12,12 +12,15 @@ const OUTCOME_STYLES: Record<RollbackOutcome, string> = {
   kept: 'bg-[#0ca30c]/10 text-[#0ca30c] dark:bg-[#0ca30c]/15 dark:text-[#2ecc2e]',
   reverted: 'bg-[#fab219]/15 text-[#8a6110] dark:bg-[#fab219]/20 dark:text-[#fab219]',
   removed: 'bg-[#d03b3b]/10 text-[#d03b3b] dark:bg-[#d03b3b]/20 dark:text-[#e66767]',
+  // Neutral: no verdict -- a newer version already replaced it and was left in place.
+  superseded: 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300',
 }
 
 const OUTCOME_LABELS: Record<RollbackOutcome, string> = {
   kept: 'Kept',
   reverted: 'Reverted',
   removed: 'Removed',
+  superseded: 'Superseded',
 }
 
 function useStagedReveal(count: number, active: boolean) {
@@ -30,7 +33,7 @@ function useStagedReveal(count: number, active: boolean) {
     }
     setRevealed(0)
     let i = 0
-    // `cancelled` (bugs.md #16), not just clearInterval in the cleanup: if a
+    // `cancelled`, not just clearInterval in the cleanup: if a
     // second rollback is triggered while this effect's interval already has
     // a tick queued in the event loop, clearInterval alone can't stop a tick
     // that's already been scheduled before cleanup runs -- it would still
@@ -56,7 +59,7 @@ function useStagedReveal(count: number, active: boolean) {
 export default function Rollback() {
   // limit=200 (the backend's max page size, app/api/routes/memories.py) --
   // these selects need the full memory list, not the default paginated
-  // page (bugs.md #8), and this app is demo-scale.
+  // page, and this app is demo-scale.
   const { data: memoriesPage } = useMemories(undefined, 200)
   const memories = memoriesPage?.items
 
@@ -230,7 +233,11 @@ export default function Rollback() {
             {triggerRollback.isPending || animating ? 'Rolling back…' : 'Mark poisoned & recover'}
           </button>
         </div>
-        {triggerRollback.isError && <p className="mt-2 text-sm text-red-500">Rollback failed.</p>}
+        {triggerRollback.isError && (
+          <p className="mt-2 text-sm text-red-500">
+            Rollback failed: {triggerRollback.error.message}
+          </p>
+        )}
 
         {triggerRollback.isSuccess && (
           <div className="mt-4 space-y-3">

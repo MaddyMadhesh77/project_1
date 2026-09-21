@@ -6,10 +6,10 @@ from app.services.rollback import (
     OUTCOME_KEPT,
     OUTCOME_REMOVED,
     OUTCOME_REVERTED,
-    NodeOutcome,
-    _is_tainted,
+    ParentRef,
     classify_outcome,
     processing_order,
+    valid_sources,
 )
 
 
@@ -26,39 +26,45 @@ def test_removed_when_no_support_and_no_prior_version():
     assert classify_outcome(has_independent_support=False, has_prior_version=False) == OUTCOME_REMOVED
 
 
-def _outcome(outcome: str) -> NodeOutcome:
-    return NodeOutcome(
-        version_id=uuid.uuid4(),
-        memory_id=uuid.uuid4(),
-        text="x",
-        outcome=outcome,
-        new_version_id=uuid.uuid4(),
-        trust_score=0.0,
-        reason="",
-    )
+def _ref(memory_id: uuid.UUID, version_number: int) -> ParentRef:
+    return ParentRef(version_id=uuid.uuid4(), memory_id=memory_id, version_number=version_number)
 
 
-def test_poisoned_version_itself_is_always_tainted():
-    poisoned = uuid.uuid4()
-    assert _is_tainted(poisoned, poisoned, {}) is True
+def test_poisoned_version_itself_is_never_valid_support():
+    poisoned = _ref(uuid.uuid4(), 1)
+    assert valid_sources([poisoned], poisoned.version_id, set()) == []
 
 
-def test_untouched_parent_is_not_tainted():
-    poisoned, other = uuid.uuid4(), uuid.uuid4()
-    assert _is_tainted(other, poisoned, {}) is False
+def test_untouched_parent_is_valid_support():
+    poisoned_id, other = uuid.uuid4(), _ref(uuid.uuid4(), 1)
+    assert valid_sources([other], poisoned_id, set()) == [other]
 
 
-def test_removed_parent_taints_its_children():
-    poisoned, parent = uuid.uuid4(), uuid.uuid4()
-    outcomes = {parent: _outcome(OUTCOME_REMOVED)}
-    assert _is_tainted(parent, poisoned, outcomes) is True
+def test_parent_from_a_removed_memory_is_not_valid_support():
+    poisoned_id, parent = uuid.uuid4(), _ref(uuid.uuid4(), 1)
+    assert valid_sources([parent], poisoned_id, {parent.memory_id}) == []
 
 
-def test_kept_or_reverted_parent_does_not_taint_children():
-    poisoned, parent_a, parent_b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    outcomes = {parent_a: _outcome(OUTCOME_KEPT), parent_b: _outcome(OUTCOME_REVERTED)}
-    assert _is_tainted(parent_a, poisoned, outcomes) is False
-    assert _is_tainted(parent_b, poisoned, outcomes) is False
+def test_copied_edge_on_a_newer_version_does_not_count_as_support():
+    # carry_forward_edges copies the poisoned v2's edge onto v3 of the same
+    # memory; the child was derived from v2, so v3 must not rescue it.
+    memory_id = uuid.uuid4()
+    poisoned, newer_copy = _ref(memory_id, 2), _ref(memory_id, 3)
+    assert valid_sources([poisoned, newer_copy], poisoned.version_id, set()) == []
+
+
+def test_child_derived_before_the_poisoned_version_keeps_its_support():
+    # Derived from legit v1; v2 (poisoned) and v3 only carry copies of that edge.
+    memory_id = uuid.uuid4()
+    original, poisoned, newer_copy = _ref(memory_id, 1), _ref(memory_id, 2), _ref(memory_id, 3)
+    assert valid_sources([newer_copy, poisoned, original], poisoned.version_id, set()) == [original]
+
+
+def test_one_source_per_memory_plus_independent_memories():
+    poisoned_memory, other_memory = uuid.uuid4(), uuid.uuid4()
+    poisoned = _ref(poisoned_memory, 1)
+    independent = _ref(other_memory, 1)
+    assert valid_sources([poisoned, _ref(poisoned_memory, 2), independent], poisoned.version_id, set()) == [independent]
 
 
 def test_processing_order_is_topological_for_a_chain():
