@@ -7,7 +7,7 @@ from datetime import date
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Memory, MemoryVersion, RollbackEvent
+from app.models import Memory, MemoryVersion, RollbackEvent, TrustEvent
 
 # MemoryVersion.decision values (DESIGN.md 6.5) -- the only three the trend
 # chart buckets; anything else (there isn't anything else today) is ignored
@@ -58,10 +58,24 @@ def build_trend(
     ]
 
 
+# Trust-gate decisions only: versions the trust engine actually scored on the
+# way in (chat, demo seed), identified by their created/updated trust event.
+# Counting every memory_versions row also counted the 1-3 versions each
+# rollback writes and attack-simulator injections, so a single rollback showed
+# up as extra "store"/"reject" decisions on the trend chart. Rollbacks are
+# counted separately (rollback_count / the trend's rollbacks series).
+_GATE_EVENT_TYPES = ("created", "updated")
+_gate_scored = MemoryVersion.version_id.in_(
+    sa.select(TrustEvent.version_id).where(TrustEvent.event_type.in_(_GATE_EVENT_TYPES))
+)
+
+
 async def get_summary(db: AsyncSession) -> dict:
     status_rows = (await db.execute(sa.select(Memory.status, sa.func.count()).group_by(Memory.status))).all()
     decision_rows = (
-        await db.execute(sa.select(MemoryVersion.decision, sa.func.count()).group_by(MemoryVersion.decision))
+        await db.execute(
+            sa.select(MemoryVersion.decision, sa.func.count()).where(_gate_scored).group_by(MemoryVersion.decision)
+        )
     ).all()
 
     total_memories = (await db.execute(sa.select(sa.func.count()).select_from(Memory))).scalar_one()
@@ -76,9 +90,9 @@ async def get_summary(db: AsyncSession) -> dict:
     version_day = sa.cast(sa.func.date_trunc("day", MemoryVersion.created_at), sa.Date).label("day")
     decision_day_rows = (
         await db.execute(
-            sa.select(version_day, MemoryVersion.decision, sa.func.count().label("n")).group_by(
-                version_day, MemoryVersion.decision
-            )
+            sa.select(version_day, MemoryVersion.decision, sa.func.count().label("n"))
+            .where(_gate_scored)
+            .group_by(version_day, MemoryVersion.decision)
         )
     ).all()
 

@@ -21,7 +21,9 @@ class Memory(Base):
         sa.ForeignKey("memory_versions.version_id", use_alter=True, name="fk_memories_current_version_id"),
         nullable=True,
     )
-    # trusted | low_trust | rejected | quarantined | rolled_back
+    # trusted | low_trust | quarantined | rolled_back -- see
+    # versioning.STATUS_BY_DECISION (a "reject" decision lands as quarantined)
+    # and rollback (removed -> rolled_back).
     status: Mapped[str] = mapped_column(sa.String, nullable=False, server_default="trusted")
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False

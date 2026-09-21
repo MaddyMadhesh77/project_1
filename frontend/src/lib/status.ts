@@ -6,7 +6,6 @@ const STATUS_STYLES: Record<string, string> = {
   trusted: 'bg-[#0ca30c]/10 text-[#0ca30c] dark:bg-[#0ca30c]/15 dark:text-[#2ecc2e]',
   low_trust: 'bg-[#fab219]/15 text-[#8a6110] dark:bg-[#fab219]/20 dark:text-[#fab219]',
   quarantined: 'bg-[#d03b3b]/10 text-[#d03b3b] dark:bg-[#d03b3b]/20 dark:text-[#e66767]',
-  rejected: 'bg-[#d03b3b]/10 text-[#d03b3b] dark:bg-[#d03b3b]/20 dark:text-[#e66767]',
   rolled_back: 'bg-[#ec835a]/15 text-[#a85226] dark:bg-[#ec835a]/20 dark:text-[#ec835a]',
 }
 

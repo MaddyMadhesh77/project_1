@@ -137,7 +137,8 @@ export default function Analytics() {
           Trust decisions &amp; rollbacks over time
         </h2>
         <p className="mb-4 text-xs text-neutral-500 dark:text-neutral-400">
-          One bar per day per outcome -- versions written with each decision, plus rollback events triggered that day.
+          One bar per day per outcome -- memories the trust gate stored, flagged for review or rejected, plus rollback
+          events triggered that day. Versions written by a rollback itself aren&rsquo;t counted as decisions.
         </p>
         {data.trend.length === 0 ? (
           <p className="py-8 text-center text-sm text-neutral-400">No activity yet -- talk to the chat to see a trend.</p>

@@ -12,7 +12,6 @@ const STATUS_COLORS: Record<string, string> = {
   trusted: '#0ca30c',
   low_trust: '#fab219',
   quarantined: '#d03b3b',
-  rejected: '#d03b3b',
   rolled_back: '#ec835a',
 }
 const FALLBACK_COLOR = '#a3a3a3'
@@ -20,7 +19,7 @@ const FALLBACK_COLOR = '#a3a3a3'
 const NODE_WIDTH = 220
 const NODE_HEIGHT = 56
 
-// elkjs, not dagre (bugs.md #17: dagre's last release was 2020, unmaintained).
+// elkjs, not dagre (dagre's last release was 2020 -- unmaintained).
 // elk.bundled.js runs layout synchronously in-thread instead of spinning up
 // a web worker -- the right build for a small, render-blocking graph like
 // this one (xyflow's own elkjs layout example uses the same import). Loaded

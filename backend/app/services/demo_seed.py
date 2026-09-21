@@ -9,7 +9,7 @@ from app.core.config import Settings
 from app.models import Provenance, TrustEvent
 from app.services import graph, merkle, trust_engine, versioning
 from app.services.embedding import get_embedding_service
-from app.services.features import FeatureVector
+from app.services.features import SOURCE_RELIABILITY, FeatureVector
 
 # DESIGN.md §9 flow-2 demo chain: "likes Python" -> "recommend Django" ->
 # "recommend FastAPI", each memory derived from the one before it via a
@@ -19,12 +19,10 @@ from app.services.features import FeatureVector
 # pipeline uses.
 #
 # Shared by scripts/seed_demo.py (the CLI entry point) and
-# app/api/routes/admin.py's POST /admin/reset (bugs.md #11), so both stay in
+# app/api/routes/admin.py's POST /admin/reset, so both stay in
 # sync with a single source of truth for what "a freshly seeded demo" means.
 
 SEED_CONVERSATION_ID = uuid.UUID("00000000-0000-0000-0000-000000000042")
-
-SOURCE_RELIABILITY = {"user": 1.0, "llm_inference": 0.6}
 
 # (stored text, provenance source_type, raw utterance/reply it came from).
 # Each node uses a different predicate category (DESIGN.md 6.1) so retrieval
@@ -58,7 +56,7 @@ async def seed_demo(db: AsyncSession, settings: Settings) -> list[str] | None:
     lines: list[str] = []
     prior_version_id: uuid.UUID | None = None
     for text, source_type, raw_input in CHAIN:
-        embedding = embedding_service.embed(text)
+        embedding = await embedding_service.aembed(text)
 
         features = FeatureVector(
             similarity=0.0,
@@ -89,7 +87,7 @@ async def seed_demo(db: AsyncSession, settings: Settings) -> list[str] | None:
             },
         )
 
-        # bugs.md Bug D: without this, a fresh seed left /logs empty and
+        # Without this, a fresh seed left /logs empty and
         # /analytics/summary's trend flat -- chat.py writes one of these per
         # candidate (DESIGN.md 5: trust_events "feeds ML training"), and this
         # is the only other place that mints memory versions, so it needs the
