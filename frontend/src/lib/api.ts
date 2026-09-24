@@ -15,10 +15,26 @@ export class ApiError extends Error {
 // on a shared network, not a determined attacker with the deployed bundle.
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined
 
-// Every backend data route lives under /v1 (bugs.md #13 / app/main.py) --
+// Every backend data route lives under /v1 (see app/main.py) --
 // prefixed once here rather than in each endpoint string below, so bumping
 // to /v2 later is a one-line change instead of an edit-every-call-site diff.
 const API_PREFIX = '/v1'
+
+// FastAPI error bodies are {"detail": "..."} (a string, or a list of
+// validation errors for a 422). Surface just the message, so UI error text
+// reads "internal server error" rather than the raw JSON body.
+function errorMessage(body: string, res: Response): string {
+  try {
+    const { detail } = JSON.parse(body) as { detail?: unknown }
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d) => (d as { msg?: string }).msg ?? JSON.stringify(d)).join('; ')
+    }
+  } catch {
+    // not JSON
+  }
+  return body || res.statusText
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_PREFIX}${path}`, {
@@ -31,8 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!res.ok) {
-    const body = await res.text()
-    throw new ApiError(res.status, body || res.statusText)
+    throw new ApiError(res.status, errorMessage(await res.text(), res))
   }
 
   return res.json() as Promise<T>
@@ -61,6 +76,8 @@ export interface ChatResponse {
   conversation_id: string
   reply: string
   stored_memories: StoredMemory[]
+  // Candidates the backend extracted but failed to store (logged server-side).
+  failed_candidates: number
 }
 
 export interface Memory {
@@ -79,6 +96,20 @@ export interface MemoriesPage {
 }
 
 export type TrustBreakdown = Record<string, number>
+
+// GET /trust/model -- which scorer new candidates currently get.
+// rf_bootstrap = RandomForest trained on the synthetic set only, allowed by
+// ML_BOOTSTRAP_ON_SYNTHETIC; rf_real = enough real rollback-labelled samples.
+export interface ModelStatus {
+  mode: 'rule_only' | 'rf_bootstrap' | 'rf_real'
+  model_loaded: boolean
+  n_samples: number
+  n_real_samples: number
+  trained_at: string | null
+  min_training_samples: number
+  bootstrap_on_synthetic: boolean
+  rf_blend_weight: number
+}
 
 export interface MemoryDetail extends Memory {
   trust_breakdown: TrustBreakdown | null
@@ -154,6 +185,8 @@ export interface RowMismatch {
 export interface VerifyResult {
   tampered: boolean
   row_mismatches: RowMismatch[]
+  // Versions with no provenance row: can't be hash-verified, always count as tampered.
+  orphaned_version_ids: string[]
   root_mismatch: boolean
   expected_root: string | null
   actual_root: string
@@ -192,7 +225,9 @@ export interface InjectPoisonResult {
   decision: string
 }
 
-export type RollbackOutcome = 'kept' | 'reverted' | 'removed'
+// superseded: a newer version had already replaced it, so it was left untouched
+// (including the poisoned version itself, when it was already stale).
+export type RollbackOutcome = 'kept' | 'reverted' | 'removed' | 'superseded'
 
 export interface RollbackNodeOutcome {
   version_id: string
@@ -274,6 +309,8 @@ export const api = {
     request<MemoryHistoryPage>(`/memories/${memoryId}/history?limit=${limit}&offset=${offset}`),
 
   getTrust: (versionId: string) => request<TrustDetail>(`/trust/${versionId}`),
+
+  getModelStatus: () => request<ModelStatus>('/trust/model'),
 
   retrainModel: () => request<RetrainResult>('/trust/retrain', { method: 'POST' }),
 

@@ -1,14 +1,32 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ChatRequest } from './api'
+
+// Every query that reads memory-store state. Any write (chat, attack
+// simulator, rollback) can change all of them: only invalidating ['memories']
+// left the analytics, logs, integrity history, open memory pages and search
+// results stale until a remount. integrity-verify is deliberately excluded --
+// it's a user-triggered check, re-run on demand, not live state.
+const MEMORY_STORE_KEYS = [
+  'memories',
+  'memory',
+  'memory-history',
+  'memory-graph',
+  'analytics-summary',
+  'logs',
+  'integrity-history',
+  'search',
+] as const
+
+function invalidateMemoryStore(queryClient: QueryClient) {
+  for (const key of MEMORY_STORE_KEYS) queryClient.invalidateQueries({ queryKey: [key] })
+}
 
 export function useChat() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (body: ChatRequest) => api.chat(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['memories'] })
-    },
+    onSuccess: () => invalidateMemoryStore(queryClient),
   })
 }
 
@@ -17,6 +35,13 @@ export function useMemories(status?: string, limit = 50, offset = 0) {
     queryKey: ['memories', status ?? 'all', limit, offset],
     queryFn: () => api.listMemories(status, limit, offset),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useModelStatus() {
+  return useQuery({
+    queryKey: ['model-status'],
+    queryFn: () => api.getModelStatus(),
   })
 }
 
@@ -46,7 +71,7 @@ export function useMemoryGraph(memoryId: string | undefined) {
 }
 
 export function useVerifyIntegrity() {
-  // GET /integrity/verify (bugs.md #12/#20) is read-only, so it belongs in
+  // GET /integrity/verify is read-only, so it belongs in
   // TanStack Query's query half (cacheable, auto-retried) rather than the
   // mutation half -- previously a useMutation here, matching the backend's
   // old (semantically wrong) POST. Verification is still user-triggered via
@@ -70,9 +95,7 @@ export function useTamperDb() {
 
   return useMutation({
     mutationFn: api.tamperDb,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['memories'] })
-    },
+    onSuccess: () => invalidateMemoryStore(queryClient),
   })
 }
 
@@ -81,9 +104,7 @@ export function useInjectPoison() {
 
   return useMutation({
     mutationFn: api.injectPoison,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['memories'] })
-    },
+    onSuccess: () => invalidateMemoryStore(queryClient),
   })
 }
 
@@ -93,16 +114,16 @@ export function useTriggerRollback() {
   return useMutation({
     mutationFn: ({ versionId, triggeredBy }: { versionId: string; triggeredBy?: string }) =>
       api.triggerRollback(versionId, triggeredBy),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['memories'] })
-      queryClient.invalidateQueries({ queryKey: ['integrity-history'] })
-    },
+    onSuccess: () => invalidateMemoryStore(queryClient),
   })
 }
 
 export function useRetrainModel() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: () => api.retrainModel(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['model-status'] }),
   })
 }
 
