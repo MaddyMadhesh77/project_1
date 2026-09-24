@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.params import PageLimit, PageOffset
 from app.db.session import get_db
 from app.models import Memory, MemoryVersion, TrustEvent
 
@@ -31,13 +32,10 @@ class LogsPageOut(BaseModel):
 
 
 @router.get("/logs", response_model=LogsPageOut)
-async def get_logs(limit: int = 50, offset: int = 0, db: AsyncSession = Depends(get_db)) -> LogsPageOut:
+async def get_logs(limit: PageLimit = 50, offset: PageOffset = 0, db: AsyncSession = Depends(get_db)) -> LogsPageOut:
     """DESIGN.md 8 Logs.tsx data source -- raw trust_events feed, newest
     first, joined with the version/memory it scored so each row is
     self-describing without a follow-up request."""
-    limit = max(1, min(limit, 200))
-    offset = max(0, offset)
-
     total = (await db.execute(select(func.count()).select_from(TrustEvent))).scalar_one()
 
     rows = (

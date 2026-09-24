@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,9 +52,18 @@ async def tamper_db(body: TamperRequest, db: AsyncSession = Depends(get_db)) -> 
 
 
 class InjectPoisonRequest(BaseModel):
-    text: str = Field(max_length=4000)  # canonical stored text, e.g. "preference: not Python"
+    text: str = Field(min_length=1, max_length=4000)  # canonical stored text, e.g. "preference: not Python"
     memory_id: uuid.UUID | None = None  # None => brand-new memory; otherwise versions an existing one
-    forced_trust_score: float = 95.0
+    # Same 0-100 scale as every trust score; out-of-range values used to be
+    # stored as-is (negative scores) or overflow the column (a 500).
+    forced_trust_score: float = Field(95.0, ge=0, le=100)
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text must not be blank")
+        return value
 
 
 class InjectPoisonResponse(BaseModel):
@@ -80,7 +89,7 @@ async def inject_poison(body: InjectPoisonRequest, db: AsyncSession = Depends(ge
     in the Merkle tree, and can anchor dependency edges, exactly like a
     genuinely-admitted memory would.
     """
-    embedding = get_embedding_service().embed(body.text)
+    embedding = await get_embedding_service().aembed(body.text)
 
     # versioning.write_version already looks up (and locks) the memory row
     # by id and raises ValueError if it doesn't exist -- a separate existence

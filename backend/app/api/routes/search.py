@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.services import retrieval
 from app.services.embedding import get_embedding_service
@@ -24,18 +23,21 @@ class SearchHitOut(BaseModel):
 
 @router.get("/search", response_model=list[SearchHitOut])
 async def search_memories(
-    q: str = Query(max_length=4000),
-    top_k: int = 5,
+    q: str = Query(min_length=1, max_length=4000),
+    top_k: int = Query(5, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings),
 ) -> list[SearchHitOut]:
     """Exposes the same hybrid retrieval (services/retrieval.py) the chat
     pipeline uses internally for its own trust-scoring, per DESIGN.md §9 flow
     5 -- a direct demo of the retrieval mechanism rather than a new one."""
+    # A blank query used to be embedded as-is and return arbitrary
+    # nearest neighbours (the keyword leg skips blank text entirely).
+    if not q.strip():
+        raise HTTPException(status_code=422, detail="q must not be blank")
     embedding_service = get_embedding_service()
-    embedding = embedding_service.embed(q)
+    embedding = await embedding_service.aembed(q)
 
-    hits = await retrieval.hybrid_search(db, embedding=embedding, text=q, top_k=min(max(top_k, 1), 20))
+    hits = await retrieval.hybrid_search(db, embedding=embedding, text=q, top_k=top_k)
 
     return [
         SearchHitOut(

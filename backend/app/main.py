@@ -1,19 +1,16 @@
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from app.api.routes import admin, analytics, attack, chat, integrity, logs, memories, rollback, search, trust
 from app.core.config import get_settings
+from app.core.errors import UnhandledErrorMiddleware
 from app.core.logging import configure_logging
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security import require_api_key
 from app.services.embedding import get_embedding_service
-
-logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -37,8 +34,23 @@ def create_app() -> FastAPI:
             "a non-debug deployment. Set API_KEY, or DEBUG=true for local/demo use."
         )
 
-    app = FastAPI(title="RecoverMem API", version="0.1.0", lifespan=lifespan)
+    # Interactive docs and the OpenAPI schema describe every route, including
+    # the destructive ones -- public by default in FastAPI, and not behind
+    # require_api_key. Only served in debug (local/demo) mode.
+    docs = {} if settings.debug else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    app = FastAPI(title="RecoverMem API", version="0.1.0", lifespan=lifespan, **docs)
 
+    # Order matters: the middleware added LAST is the outermost. CORS must wrap
+    # everything that can produce a response on its own -- the rate limiter's
+    # 429 and the catch-all's 500 -- or those go out without CORS headers and
+    # the browser reports an opaque network error instead of the real status.
+    app.add_middleware(UnhandledErrorMiddleware)
+    app.add_middleware(
+        RateLimitMiddleware,
+        requests=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+        api_key=settings.api_key,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -46,28 +58,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(
-        RateLimitMiddleware,
-        requests=settings.rate_limit_requests,
-        window_seconds=settings.rate_limit_window_seconds,
-    )
-
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        # bugs.md #14: an uncaught exception previously propagated straight to
-        # the client. Log the full traceback server-side (exc_info via
-        # .exception) and return a flat, generic JSON body -- never str(exc),
-        # which can echo internal details (a raw SQL error, a file path, a
-        # stack frame) back to whoever sent the request.
-        logger.exception("unhandled exception on %s %s", request.method, request.url.path)
-        return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Every data route lives under /v1 (bugs.md #13: "any breaking change
-    # requires coordinating frontend and backend simultaneously") -- a future
+    # Every data route lives under /v1, so a breaking API change doesn't
+    # require changing frontend and backend in lockstep -- a future
     # v2 can be introduced alongside this one instead of forcing a
     # synchronized cutover. /health stays unprefixed: it's an infra liveness
     # probe, not a versioned data API.
@@ -88,10 +85,13 @@ def create_app() -> FastAPI:
         # so a production deployment has no route to hit regardless of
         # auth/rate-limit config.
         v1.include_router(attack.router, dependencies=auth)
-        # POST /admin/reset (bugs.md #11) -- truncates and re-seeds the whole
+        # POST /admin/reset -- truncates and re-seeds the whole
         # demo dataset. Just as destructive as attack.router's endpoints, so
         # it's gated the same way: never registered outside debug mode.
         v1.include_router(admin.router, dependencies=auth)
+        # POST /trust/retrain rewrites model.pkl, which is then unpickled on
+        # every scoring call -- never exposed outside debug mode.
+        v1.include_router(trust.retrain_router, dependencies=auth)
 
     app.include_router(v1)
 

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.params import PageLimit, PageOffset
 from app.db.session import get_db
 from app.models import DependencyEdge, Memory, MemoryVersion, RollbackEvent, RollbackOutcome
 from app.services import graph as graph_service
@@ -97,13 +98,11 @@ def _version_counts_subquery():
 
 @router.get("/memories", response_model=MemoriesPageOut)
 async def list_memories(
-    status: str | None = None, limit: int = 50, offset: int = 0, db: AsyncSession = Depends(get_db)
+    status: str | None = None, limit: PageLimit = 50, offset: PageOffset = 0, db: AsyncSession = Depends(get_db)
 ) -> MemoriesPageOut:
-    # Unbounded before this (bugs.md #8): a memory table with hundreds of
+    # Unbounded before this: a memory table with hundreds of
     # rows returned the full table on every load. limit/offset + a total
     # count mirror GET /logs's existing paginated shape.
-    limit = max(1, min(limit, 200))
-    offset = max(0, offset)
 
     count_stmt = select(func.count()).select_from(Memory)
     if status:
@@ -164,16 +163,14 @@ async def get_memory(memory_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
 
 @router.get("/memories/{memory_id}/history", response_model=MemoryHistoryPageOut)
 async def get_memory_history(
-    memory_id: uuid.UUID, limit: int = 50, offset: int = 0, db: AsyncSession = Depends(get_db)
+    memory_id: uuid.UUID, limit: PageLimit = 50, offset: PageOffset = 0, db: AsyncSession = Depends(get_db)
 ) -> MemoryHistoryPageOut:
     memory = await db.get(Memory, memory_id)
     if memory is None:
         raise HTTPException(status_code=404, detail="memory not found")
 
-    # Unbounded before this (bugs.md #8): a memory with hundreds of versions
+    # Unbounded before this: a memory with hundreds of versions
     # returned every row on every page load.
-    limit = max(1, min(limit, 200))
-    offset = max(0, offset)
 
     total = (
         await db.execute(

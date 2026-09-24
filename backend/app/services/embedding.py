@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from functools import lru_cache
 
 from sentence_transformers import SentenceTransformer
@@ -15,6 +16,12 @@ class EmbeddingService:
 
     def embed(self, text: str) -> list[float]:
         return self._model.encode(text, normalize_embeddings=True).tolist()
+
+    async def aembed(self, text: str) -> list[float]:
+        """embed() off the event loop. encode() is CPU-bound and synchronous:
+        called directly from an async route it stalls every other in-flight
+        request for the duration of the model's forward pass."""
+        return await asyncio.to_thread(self.embed, text)
 
 
 @lru_cache

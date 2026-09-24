@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.params import PageLimit
 from app.db.session import get_db
 from app.models import MerkleRoot
 from app.services import merkle
@@ -40,8 +41,8 @@ class MerkleRootOut(BaseModel):
 @router.get("/integrity/verify", response_model=VerifyResponse)
 async def verify_integrity(db: AsyncSession = Depends(get_db)) -> VerifyResponse:
     """DESIGN.md 6.8 Verify Integrity -- recompute + compare, read-only (no
-    write path taken here even when tampering is found). GET, not POST
-    (bugs.md #12/#20): this performs no mutation, so it belongs in the
+    write path taken here even when tampering is found). GET, not POST:
+    this performs no mutation, so it belongs in the
     cacheable/retryable/prefetchable half of HTTP -- and on the client,
     TanStack Query only treats GETs as queries it can cache and auto-retry."""
     result = await merkle.verify_integrity(db)
@@ -59,7 +60,7 @@ async def verify_integrity(db: AsyncSession = Depends(get_db)) -> VerifyResponse
 
 
 @router.get("/integrity/history", response_model=list[MerkleRootOut])
-async def get_integrity_history(limit: int = 20, db: AsyncSession = Depends(get_db)) -> list[MerkleRootOut]:
+async def get_integrity_history(limit: PageLimit = 20, db: AsyncSession = Depends(get_db)) -> list[MerkleRootOut]:
     # sequence_number, not computed_at -- see migration 8b2e5f6a1c9d (computed_at
     # is transaction time, identical across a multi-write transaction like a
     # rollback, so it can't recover true insertion order on its own).
