@@ -75,6 +75,15 @@ class TemplatedLLMClient:
         return round(min(1.0, max(0.0, score)), 2)
 
 
+def history_for_api(history: list[dict[str, str]]) -> list[dict[str, str]]:
+    """The Messages API requires the first message to be from the user. The
+    client trims its transcript to the last N messages, and a send that
+    failed earlier leaves an unanswered user turn -- either can make the
+    trimmed history start with an assistant reply, which the API rejects."""
+    start = next((i for i, m in enumerate(history) if m.get("role") == "user"), len(history))
+    return history[start:]
+
+
 class ClaudeLLMClient:
     def __init__(self, api_key: str, model: str = "claude-sonnet-5") -> None:
         import anthropic
@@ -83,10 +92,13 @@ class ClaudeLLMClient:
         self._model = model
 
     async def reply(self, message: str, history: list[dict[str, str]]) -> str:
-        messages = [*history, {"role": "user", "content": message}]
+        messages = [*history_for_api(history), {"role": "user", "content": message}]
         response = await self._client.messages.create(
             model=self._model,
             max_tokens=512,
+            # Thinking is on by default on Claude Sonnet 5 and its tokens count
+            # toward max_tokens, which could cut a 1-3 sentence reply short.
+            thinking={"type": "disabled"},
             system=(
                 "You are a warm, concise personal assistant chatting with a user. "
                 "Keep replies to 1-3 sentences."
@@ -98,7 +110,11 @@ class ClaudeLLMClient:
     async def judge_contradiction(self, statement_a: str, statement_b: str) -> float:
         response = await self._client.messages.create(
             model=self._model,
-            max_tokens=8,
+            max_tokens=16,
+            # Same reason, but worse: with thinking on, an 8-token budget could
+            # be spent before the number was written, so parsing failed and
+            # every judgment silently fell back to 0.5.
+            thinking={"type": "disabled"},
             system=(
                 "You judge whether two short factual statements about the same person "
                 "contradict each other. Reply with ONLY a number from 0 to 1: 0 means fully "
