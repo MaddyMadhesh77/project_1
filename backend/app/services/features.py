@@ -68,13 +68,19 @@ async def _count_corroborating(
     db: AsyncSession, *, predicate: str, value: str, polarity: int, exclude_memory_id: uuid.UUID
 ) -> int:
     """How many *other* active memories independently assert the same
-    (predicate, value, polarity) -- DESIGN.md 6.4 "corroboration_count"."""
+    (predicate, value, polarity) -- DESIGN.md 6.4 "corroboration_count".
+
+    Only memories still in good standing count. A claim the trust gate
+    rejected (quarantined) or a rollback purged (rolled_back) is not
+    independent support: counting it let repeating a rejected claim raise the
+    trust of the next copy (corroboration laundering)."""
     expected_text = format_candidate_text(CandidateMemory(predicate=predicate, value=value, raw_text="", polarity=polarity))
     result = await db.execute(
         sa.select(sa.func.count(MemoryVersion.version_id))
         .join(Memory, Memory.current_version_id == MemoryVersion.version_id)
         .where(MemoryVersion.is_active.is_(True))
         .where(MemoryVersion.memory_id != exclude_memory_id)
+        .where(Memory.status.not_in(("quarantined", "rolled_back")))
         .where(sa.func.lower(MemoryVersion.text) == expected_text.lower())
     )
     return result.scalar_one()

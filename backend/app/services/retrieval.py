@@ -8,6 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Memory, MemoryVersion
 
+# Memories a rollback purged. They keep a current version (rows are never
+# deleted), but they're no longer believed: retrieving them let a purged
+# poison be matched as "the memory being updated", be recorded as a new
+# memory's source, and show up in search. Quarantined memories stay
+# retrievable -- a rejected update is still the memory's current (flagged)
+# state, and later statements must find it to version it and detect
+# contradictions.
+EXCLUDED_STATUSES = ("rolled_back",)
+
 # Reciprocal-rank-fusion constant. Standard default (Cormack et al.); flattens
 # the influence of any single ranker so neither vector nor keyword search
 # alone dominates the fused ordering.
@@ -36,7 +45,7 @@ async def hybrid_search(
     Merges pgvector cosine similarity with Postgres full-text rank via
     reciprocal-rank fusion. Only considers each memory's *current active*
     version -- retrieval reasons about the present state of the store, not
-    superseded history.
+    superseded history -- and skips memories a rollback purged.
     """
     vector_rows = (
         await db.execute(
@@ -49,6 +58,7 @@ async def hybrid_search(
             )
             .join(Memory, Memory.current_version_id == MemoryVersion.version_id)
             .where(MemoryVersion.is_active.is_(True))
+            .where(Memory.status.not_in(EXCLUDED_STATUSES))
             .order_by(MemoryVersion.embedding.cosine_distance(embedding))
             .limit(top_k)
         )
@@ -70,6 +80,7 @@ async def hybrid_search(
                 )
                 .join(Memory, Memory.current_version_id == MemoryVersion.version_id)
                 .where(MemoryVersion.is_active.is_(True))
+                .where(Memory.status.not_in(EXCLUDED_STATUSES))
                 .where(
                     sa.func.to_tsvector("english", MemoryVersion.text).op("@@")(
                         sa.func.plainto_tsquery("english", text)
