@@ -1,4 +1,4 @@
-// bugs.md #18: pages showed nothing but a plain "Loading…" line (or nothing
+// Pages used to show nothing but a plain "Loading…" line (or nothing
 // at all) while their first query was in flight -- a blank flash on every
 // navigation. These placeholders are shaped like each page's eventual
 // content so the layout doesn't jump once real data arrives.

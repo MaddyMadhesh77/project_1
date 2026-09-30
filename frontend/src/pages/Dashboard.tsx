@@ -13,7 +13,7 @@ function DemoTools() {
     <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
       <h2 className="mb-1 text-sm font-semibold text-neutral-700 dark:text-neutral-200">Demo tools</h2>
       <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-        Manual triggers -- neither runs automatically (bugs.md #10/#11).
+        Manual triggers -- neither runs automatically.
       </p>
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -75,7 +75,7 @@ function DemoTools() {
 export default function Dashboard() {
   // Real aggregate counts from the backend (services/analytics.py), not
   // derived client-side from a memories page -- a client-side tally would
-  // silently under-count once GET /memories is paginated (bugs.md #8).
+  // silently under-count once GET /memories is paginated.
   const { data: summary, isLoading, isError } = useAnalyticsSummary()
 
   if (isLoading) {

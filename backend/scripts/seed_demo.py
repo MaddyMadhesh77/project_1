@@ -1,6 +1,6 @@
 """Idempotently seeds the DESIGN.md 9 flow-2 demo chain: "likes Python" ->
 "recommend Django" -> "recommend FastAPI". The actual seeding logic lives in
-app/services/demo_seed.py, shared with POST /admin/reset (bugs.md #11) so a
+app/services/demo_seed.py, shared with POST /admin/reset so a
 demo reset doesn't drift from what this script seeds.
 
 Safe to re-run against a fresh docker-compose volume: checks for the fixed

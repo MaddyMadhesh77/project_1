@@ -8,7 +8,7 @@ interface State {
   error: Error | null
 }
 
-// bugs.md #15: an unhandled error thrown during render previously crashed
+// An unhandled error thrown during render previously crashed
 // the whole React tree to a blank white screen with no recovery path.
 // Error boundaries only catch render/lifecycle errors -- not errors inside
 // event handlers or async code (e.g. a rejected fetch), which is why this

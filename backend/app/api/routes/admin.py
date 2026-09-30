@@ -15,8 +15,7 @@ router = APIRouter(tags=["admin"])
 # Every table the memory pipeline writes to, in no particular order --
 # RESTART IDENTITY CASCADE handles both the memories.current_version_id FK
 # cycle and every child table's FK to memories/memory_versions in one
-# statement, which is exactly the "drop the DB and re-run migrations" manual
-# step bugs.md #11 wanted an endpoint for.
+# statement -- replacing the manual "drop the DB and re-run migrations" step.
 _TABLES = [
     "memories",
     "memory_versions",
@@ -38,8 +37,7 @@ class ResetResponse(BaseModel):
 async def reset_demo(
     db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)
 ) -> ResetResponse:
-    """Demo-only (bugs.md #11: "no concept of reset to clean demo state").
-    Truncates every memory-pipeline table and re-seeds the DESIGN.md §9
+    """Demo-only reset to a known-clean state. Truncates every memory-pipeline table and re-seeds the DESIGN.md §9
     flow-2 chain via the same app/services/demo_seed.py logic
     scripts/seed_demo.py uses, so a demo can return to a known-clean state
     without dropping the database and re-running migrations by hand. Only

@@ -4,7 +4,7 @@ Revision ID: a1b2c3d4e5f6
 Revises: f1a2b3c4d5e6
 Create Date: 2026-08-21 00:00:00.000000
 
-bugs.md Bug B: nothing at the DB level stopped memory_versions.is_active
+Nothing at the DB level stopped memory_versions.is_active
 from being true on more than one row for the same memory_id, which would
 leave memories.current_version_id and /memories/{id}/history disagreeing on
 what "current" means. services/versioning.py's SELECT ... FOR UPDATE already
