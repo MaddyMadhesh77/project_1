@@ -126,7 +126,7 @@ CREATE TABLE memories (
     memory_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     current_version_id  UUID,                 -- FK, nullable until first version committed
     status              TEXT NOT NULL DEFAULT 'trusted',
-                        -- trusted | low_trust | rejected | quarantined | rolled_back
+                        -- trusted | low_trust | quarantined | rolled_back
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -260,15 +260,17 @@ Two layers, combined:
    in the dashboard, e.g.:
    ```
    source              +30
-   semantic_similarity  +24
-   context              +18
-   contradiction        -10
-   history              +20
+   semantic_similarity +24
+   context             +18
+   contradiction       -10
+   corroboration       +20
    ------------------------
-   total                 82
+   total                82
    ```
-   Weights are hand-tuned constants initially; this is what ships first and
-   is what the "Trust Analysis" and quarantine demo run on.
+   (components: source, semantic_similarity or novelty, context,
+   contradiction, corroboration). Weights are hand-tuned constants in
+   `Settings`; this is what ships first and is what the trust breakdown
+   panel and quarantine demo run on.
 
 2. **RandomForestClassifier** trained on the feature vector from §6.4,
    predicting P(safe). Cold-start problem: there's no labeled data on day
@@ -285,9 +287,12 @@ Two layers, combined:
    breakdown, once the model is live.
 
    Final trust score = weighted blend of rule score and
-   `100 * P(safe)` from the RF (rule score dominates until the RF has
-   enough logged examples to be trusted; a `min_training_samples`
-   threshold gates when RF output starts influencing the final score).
+   `100 * P(safe)` from the RF (`rf_blend_weight`). Below the
+   `min_training_samples` gate the rule score is used alone. The gate counts
+   *real* rollback-labelled samples only (mode `rf_real`); for demos,
+   `ML_BOOTSTRAP_ON_SYNTHETIC=true` lets the synthetic+real total clear it
+   instead (mode `rf_bootstrap`, labelled "bootstrap model" in the UI).
+   `GET /v1/trust/model` reports which mode is live.
 
 **Decision thresholds** (tunable): `>=70` → store as trusted, `40–69` →
 store as low-trust / review queue, `<40` → reject/quarantine.
@@ -336,66 +341,95 @@ marks a memory poisoned). Algorithm:
 3. Per descendant outcome:
    - Still independently corroborated (other trusted parents support it)
      → keep active, recompute/update trust score.
-   - Solely dependent on the poisoned ancestor and a prior version exists
-     → revert `current_version_id` to that prior version (new version
-     row marked `source_type = admin_override`, not a delete).
-   - Solely dependent and no prior version → mark `rejected`/`is_active=false`.
-4. Record one `rollback_events` row with the full affected-list and
-   per-node outcome — this is what drives the "Finding descendants... 18
-   memories found... Restoring previous versions... Done" animation.
+   - Solely dependent on the poisoned ancestor and a clean prior version
+     exists (one not itself derived from the poison) → revert to it (new
+     version row with `source_type = admin_override`, not a delete).
+   - Solely dependent and no clean prior version → write a new version
+     with status `rolled_back`.
+   - No longer the memory's current version → `superseded`: left alone so
+     newer state is never overwritten (this includes the poisoned version
+     itself when it was already replaced); its descendants are still
+     processed.
+
+   Support is judged per parent *memory*, from the earliest version the
+   node has an edge from: updating a memory copies its edges onto the new
+   version, and those copies must not count as independent support.
+4. Record one `rollback_events` row plus a `rollback_outcomes` row per
+   affected node — this drives the Rollback page's staged reveal of each
+   node's outcome.
 5. Recompute and store a new Merkle root (content changed).
 
 ## 7. API Surface (FastAPI)
 
+Every data route is under `/v1` and requires the `X-API-Key` header when
+`API_KEY` is set (optional in `DEBUG` mode). `/health` is unprefixed and
+unauthenticated. All routes except `/health` are rate-limited per client.
+
 ```
-POST   /chat                          send a user message, get an AI reply
+GET    /health                        liveness probe
+
+POST   /v1/chat                       send a user message, get an AI reply
                                        (internally runs the full pipeline)
 
-GET    /memories                      list memories (filter by status)
-GET    /memories/{memory_id}          detail: current version, trust, deps
-GET    /memories/{memory_id}/history  full version timeline
-GET    /memories/{memory_id}/graph    dependency subgraph (ancestors+descendants)
+GET    /v1/memories                   list memories (filter by status; paginated)
+GET    /v1/memories/{memory_id}       detail: current version, trust, hash
+GET    /v1/memories/{memory_id}/history   full version timeline (paginated)
+GET    /v1/memories/{memory_id}/graph     dependency subgraph (ancestors+descendants)
+GET    /v1/memories/{memory_id}/rollbacks rollback runs that touched this memory
 
-GET    /trust/{version_id}            trust score + explainable breakdown
+GET    /v1/trust/model                which scorer is live: rule_only | rf_bootstrap | rf_real
+GET    /v1/trust/{version_id}         trust score + explainable breakdown
 
-POST   /integrity/verify              recompute + compare Merkle root
-GET    /integrity/history             past root snapshots
+GET    /v1/integrity/verify           recompute + compare row hashes and Merkle root
+                                       (read-only, hence GET)
+GET    /v1/integrity/history          past root snapshots
 
-POST   /rollback/{version_id}         trigger dependency-aware rollback
-GET    /rollback/{rollback_id}        rollback run status/result
+POST   /v1/rollback/{version_id}      trigger dependency-aware rollback
+GET    /v1/rollback/{rollback_id}     a past rollback run's result
 
-POST   /attack/inject-poison          demo: force-write a contradicting memory
-POST   /attack/tamper-db              demo: directly mutate a row, bypassing pipeline
+GET    /v1/search?q=...&top_k=...     hybrid semantic + keyword search
 
-GET    /search?q=...                  semantic search over memories (hybrid)
+GET    /v1/analytics/summary          status/decision counts + per-day trend
+GET    /v1/logs                       trust_events feed (paginated)
 
-GET    /analytics/summary             counts: trusted/low-trust/rejected/rollbacks
-GET    /logs                          trust_events feed
+-- registered only when DEBUG=true --
+POST   /v1/attack/inject-poison       demo: force-write a memory, bypassing the trust gate
+POST   /v1/attack/tamper-db           demo: directly mutate a row via raw SQL
+POST   /v1/admin/reset                demo: truncate all tables and re-seed
+POST   /v1/trust/retrain              retrain the RandomForest (rewrites model.pkl)
 ```
+
+`/docs`, `/redoc` and `/openapi.json` are also only served when `DEBUG=true`.
 
 ## 8. Frontend Structure (React + Vite + TS)
 
 ```
 src/
+  App.tsx                  routes: / (chat), /admin/* (dashboard)
   pages/
-    Chat.tsx              chat surface, hits POST /chat
-    Dashboard.tsx          summary tiles (trusted/low-trust/rejected/rollback/tamper)
-    Memories.tsx           table: text, trust, version, status
-    MemoryDetail.tsx       single memory: trust breakdown, hash, deps, timeline
-    Graph.tsx              dependency graph viz (react-flow)
-    VersionHistory.tsx     per-memory git-log-style timeline
-    TrustAnalysis.tsx      explainable breakdown bars (+30/+24/+18/-10/+20)
+    Chat.tsx               chat surface, hits POST /v1/chat
+    AdminLayout.tsx        admin nav: Dashboard, Memories, Integrity,
+                           Rollback, Analytics, Logs, Chat
+    Dashboard.tsx          summary tiles + demo tools (reset, retrain)
+    Memories.tsx           table: text, trust, version, status + semantic search
+    MemoryDetail.tsx       single memory: trust breakdown, hash, deps,
+                           version history
+    Graph.tsx              full-page dependency graph
     Rollback.tsx           attack simulator: inject poison / tamper / recover
     IntegrityCheck.tsx     Merkle root status, verify button
-    Analytics.tsx          charts: trend of trusted vs rejected, rollback events
-    Logs.tsx                raw trust_events feed
+    Analytics.tsx          trust decisions + rollbacks over time (recharts)
+    Logs.tsx               trust_events feed
   components/
-    GraphView/             react-flow wrapper + layout
-    TrustBreakdownBars/
+    GraphView/             @xyflow/react graph, laid out with elkjs
+    TrustBreakdownBars/    explainable breakdown bars (rule or SHAP),
+                           labelled with the scorer that produced them
     StatTile/
+    Skeleton.tsx           loading placeholders
+    ErrorBoundary.tsx      render-error fallback
   lib/
-    api.ts                 typed fetch client
-    queries.ts              TanStack Query hooks per endpoint
+    api.ts                 typed fetch client (/v1 prefix, API key header)
+    queries.ts             TanStack Query hooks per endpoint
+    status.ts              status badge styles
 ```
 
 Chat and Admin are two routes in one app (`/` and `/admin/*`), matching the
@@ -413,13 +447,15 @@ Maps directly onto the "Fifth Demo" script in the pitch:
 2. **Dependency-aware rollback**: pre-seed `likes Python → recommend Django
    → recommend FastAPI`. Attack Simulator marks "likes Python" poisoned →
    Rollback page animates descendant discovery → shows per-node outcome
-   (kept / reverted / removed).
-3. **Tamper detection**: `POST /attack/tamper-db` directly UPDATEs a row's
+   (kept / reverted / removed / superseded).
+3. **Tamper detection**: `POST /v1/attack/tamper-db` directly UPDATEs a row's
    `text` bypassing the API (simulating a rogue DBA) → "Verify Integrity"
-   flags the Merkle root mismatch and names the exact tampered version.
-4. **Explainability**: any Trust Analysis panel shows the additive
-   breakdown, not just a bare number.
-5. **Semantic retrieval demo**: `/search?q=backend frameworks` returns
+   flags the mismatch and names the exact tampered version (current or
+   superseded).
+4. **Explainability**: the trust breakdown panel on a memory's detail page
+   shows the additive breakdown (rule engine) or per-feature SHAP
+   contributions (RandomForest), not just a bare number.
+5. **Semantic retrieval demo**: `/v1/search?q=backend frameworks` returns
    "likes Python" with similarity 0.92, visibly exercising the same hybrid
    retrieval used internally by the pipeline.
 
@@ -438,7 +474,7 @@ Maps directly onto the "Fifth Demo" script in the pitch:
 | LLM (chat + extraction fallback) | pluggable `LLMClient` interface | pitch assumes ChatGPT; keep provider-agnostic so Claude or others can be swapped in without touching pipeline code |
 | Frontend | React + Vite + TypeScript | fast dev loop, matches decision |
 | Frontend data | TanStack Query | caching/refetch for dashboard live-updates |
-| Graph viz | `react-flow` | interactive dependency graph |
+| Graph viz | `@xyflow/react` + `elkjs` layout | interactive dependency graph; elkjs replaced dagre (unmaintained since 2020) |
 | Charts | `recharts` | analytics page |
 | Styling | Tailwind | speed |
 | Dev infra | `docker-compose` (Postgres w/ pgvector image) | one command local setup |
@@ -449,7 +485,7 @@ Maps directly onto the "Fifth Demo" script in the pitch:
 - **Phase 1** — Core loop, no security yet: chat → extraction (rule-based) → embed → always-store as v1. Get Chat UI talking to backend end to end.
 - **Phase 2** — Hybrid retrieval + rule-based Trust Engine + store/review/reject decision + versioning on contradictory updates.
 - **Phase 3** — Admin dashboard: Memories table + Memory detail + Trust breakdown, wired to real data (no mocks).
-- **Phase 4** — Dependency graph: edge creation during retrieval, Graph page (react-flow).
+- **Phase 4** — Dependency graph: edge creation during retrieval, Graph page (@xyflow/react).
 - **Phase 5** — Merkle tree: hash-on-write, `/integrity/verify`, tamper demo button.
 - **Phase 6** — Rollback engine + Attack Simulator page (inject poison / tamper / recover with animation).
 - **Phase 7** — RandomForest + SHAP layered on top of the rule scorer (bootstrapped on synthetic data), wired into the explainability panel.

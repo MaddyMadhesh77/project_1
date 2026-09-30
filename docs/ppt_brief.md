@@ -3,8 +3,8 @@
 Paste the block below into whatever AI slide tool you're using (Gamma,
 Copilot, Canva Magic Design, ChatGPT, etc.) as the context/prompt. It's
 self-contained — every fact in it is pulled from this repo's own docs
-(DESIGN.md, PLAN.md, literature_review.md, literature_survey_findings.md,
-bugs.md), so the AI isn't inventing content, just formatting it.
+(DESIGN.md, PLAN.md, literature_review.md, literature_survey_findings.md),
+so the AI isn't inventing content, just formatting it.
 
 ---
 

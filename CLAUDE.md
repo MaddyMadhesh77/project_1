@@ -35,7 +35,8 @@ Dependency graph is real as of Phase 4: `dependency_edges` rows are
 written whenever a brand-new memory's retrieval hit clears
 `Settings.dependency_edge_similarity_threshold`, loaded into a
 `networkx.DiGraph` (`services/graph.py`), and exposed via
-`GET /memories/{id}/graph` + `Graph.tsx`'s react-flow/dagre view.
+`GET /v1/memories/{id}/graph` + `GraphView`'s `@xyflow/react` view (laid
+out with `elkjs`).
 `scripts/seed_demo.py` idempotently seeds the §9 flow-2 demo chain
 ("likes Python" → "recommend Django" → "recommend FastAPI") directly
 through the versioning/graph services, since the rule-based extractor has
@@ -43,11 +44,14 @@ no way to produce a "recommend X" memory on its own.
 
 Merkle tamper-evidence is real as of Phase 5: `content_hash` (sha256 of
 text + embedding + provenance, computed in `services/hashing.py`) is
-recomputed and appended to `merkle_roots` on every write
-(`services/merkle.py`, wired into `services/versioning.write_version`).
-`POST /integrity/verify` recomputes per-row hashes and the tree root
-against current DB content and reports exact mismatched `version_id`s;
-`POST /attack/tamper-db` simulates an out-of-band tamper via raw SQL for
+set on every version, and a new root is appended to `merkle_roots` once per
+writing request (`services/merkle.compute_and_store_root`, called by the
+chat/attack/rollback/seed paths after their writes — not inside
+`write_version`, so a multi-write request pays for one tree rebuild).
+`GET /v1/integrity/verify` recomputes per-row hashes (every version,
+superseded ones included) and the tree root (active versions) against
+current DB content and reports exact mismatched `version_id`s;
+`POST /v1/attack/tamper-db` simulates an out-of-band tamper via raw SQL for
 the demo. Note for anyone touching `services/hashing.py` or
 `services/versioning.py`: pgvector's `vector` column does **not**
 round-trip float components bit-exactly (~1e-9 noise per component after
@@ -63,7 +67,15 @@ support excluded, and per node either keeps it (an independent parent still
 corroborates it), reverts it (no independent support, but the memory has a
 prior version to fall back to), or removes it (`memories.status` =
 `rolled_back`, neither) — never mutating a row, always writing a new
-version like everywhere else in this codebase. `POST /attack/inject-poison`
+version like everywhere else in this codebase. Support is judged per parent
+*memory* using the earliest version the node has an edge from
+(`rollback.valid_sources`): `carry_forward_edges` copies edges onto every
+newer version, and those copies must not count as independent support.
+Reverts only go back to a version that isn't itself derived from the poison.
+A version that's no longer current — including the poisoned version itself,
+when it was already replaced — is recorded as `superseded` and left alone,
+so newer state is never clobbered, while its descendants are still
+recovered. `POST /attack/inject-poison`
 force-writes a memory through the real versioning/hashing/Merkle pipeline
 while bypassing only the trust engine, for a reliably-reproducible
 "attacker got past the gate" demo trigger; `/attack/tamper-db` (Phase 5)
@@ -79,17 +91,22 @@ details.
 The RandomForest+SHAP trust layer is real as of Phase 7:
 `services/trust_engine.py` loads `app/ml/model.pkl` (trained via
 `python -m app.ml.train` on `app/ml/data/synthetic_examples.json` plus any
-real `trust_events`/`rollback_events` outcomes it can reach) and blends
-`100 * P(safe)` with the Phase 2 rule score once the model's recorded
-`n_samples` clears `Settings.min_training_samples` (default 50; the
-60-example synthetic set alone clears this) — below that, or if
-`model.pkl` doesn't exist yet, scoring is 100% the rule engine, so the demo
-never depends on training having happened. Once live, `trust_breakdown` is
-populated from real `shap.TreeExplainer` per-feature contributions (keyed
-by the raw §6.4 feature names + `baseline`, not the Phase 2 rule
-categories — `TrustBreakdownBars.tsx` renders both key sets identically).
-Retraining is a manual step (`python -m app.ml.train`); there's no
-auto-retrain loop by design (see PLAN.md Phase 7 notes).
+real rollback-labelled outcomes it can reach) and blends `100 * P(safe)`
+with the Phase 2 rule score once the model's recorded `n_real_samples`
+clears `Settings.min_training_samples` (default 50) — mode `rf_real`. The
+60-example synthetic set does **not** count toward that gate on its own;
+with `ML_BOOTSTRAP_ON_SYNTHETIC=true` (set in `.env.example` for the demo,
+off by default in `Settings`) the synthetic+real *total* is allowed to clear
+it instead — mode `rf_bootstrap`, which `GET /v1/trust/model` reports and
+the UI labels "bootstrap model". Otherwise, or if `model.pkl` doesn't exist
+yet, scoring is 100% the rule engine, so the demo never depends on training
+having happened. Once live, `trust_breakdown` is populated from real
+`shap.TreeExplainer` per-feature contributions (keyed by the raw §6.4
+feature names + `baseline`, not the Phase 2 rule categories). Those bars sum
+to the model's own score, not the stored blended score —
+`TrustBreakdownBars` shows both. Retraining is a manual step
+(`python -m app.ml.train`, which also prints the resulting scorer mode);
+there's no auto-retrain loop by design (see PLAN.md Phase 7 notes).
 
 Analytics/Logs/Search are real as of Phase 8: `GET /analytics/summary`
 (`services/analytics.py`) returns status/decision counts and a per-day
@@ -119,7 +136,7 @@ own mechanisms:
   (e.g. a rollback recovering a 3-node chain calls
   `compute_and_store_root` three times) shared one timestamp, and
   `latest_root()`'s `root_id`-tiebreak (a random UUID) could pick a stale
-  mid-transaction root — caught as `POST /integrity/verify` falsely
+  mid-transaction root — caught as `/integrity/verify` falsely
   reporting `tampered: true` immediately after a clean rollback. Fixed
   with a real monotonic `sequence_number` column (migration
   `8b2e5f6a1c9d`) backing `merkle.latest_root()` and
@@ -130,11 +147,20 @@ Neither is a Phase 8 design change — both are correctness bugs in Phase
 exercise. See PLAN.md's Phase 8 implementation notes for the full
 diagnosis.
 
+## Post-MVP hardening (2026-10 audit)
+An audit after Phase 8 led to: every data route under `/v1` behind an
+optional API key, with debug-only demo/admin routes and API docs; rate
+limiting that can't be bypassed with arbitrary keys; CORS headers on 429s
+and 500s; a 503 (not a silent 200) from `/chat` when the database is down;
+and DB-backed integration tests in `backend/tests/integration/` (they skip
+without Postgres — `REQUIRE_DB=1` makes that a failure). See README's Tests
+section.
+
 ## Stack (decided)
 - Backend: Python, FastAPI, PostgreSQL + pgvector, SQLAlchemy/Alembic,
   sentence-transformers, scikit-learn RandomForest + SHAP, networkx
-- Frontend: React + Vite + TypeScript, TanStack Query, react-flow, recharts,
-  Tailwind
+- Frontend: React + Vite + TypeScript, TanStack Query, `@xyflow/react` +
+  `elkjs`, recharts, Tailwind
 
 ## Patent / novelty framing
 Do not position this as a novel patentable invention without re-checking

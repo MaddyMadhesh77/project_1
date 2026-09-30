@@ -130,8 +130,9 @@ with a literature anchor:
 2. **Rule-engine weights are uncalibrated relative to the field's own
    standard.** The zero-trust access-control paper (§5.2) performs a
    sensitivity analysis of its scoring weights; RecoverMem's rule scorer
-   has not undergone equivalent calibration (also independently flagged in
-   this project's own `docs/bugs.md`).
+   has not undergone equivalent calibration (also flagged in the project's
+   own code: the weights in `backend/app/core/config.py` are documented as
+   hand-tuned, not calibrated against labelled data).
 3. **Hybrid retrieval is a partial, not complete, defense against
    retrieval-time poisoning.** Semantic Chameleon (§2.3) shows an adaptive
    attacker who jointly optimizes against both the sparse and dense

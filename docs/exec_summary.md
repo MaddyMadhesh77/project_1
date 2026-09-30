@@ -18,9 +18,9 @@ One honest gap, flagged in PLAN.md like Phase 1 was: no browser-automation tool 
 
 Next up: Phase 4 (dependency graph).
 
-Phase 4 (Dependency Graph): dependency_edges table + model, services/graph.py (networkx BFS/ancestor helpers, reusable by Phase 6's rollback engine), edge creation wired into the chat pipeline, GET /memories/{id}/graph, Graph.tsx + GraphView (react-flow/dagre), and an idempotent scripts/seed_demo.py that seeds the "likes Python → recommend Django → recommend FastAPI" chain the rule-based extractor can't produce on its own.
+Phase 4 (Dependency Graph): dependency_edges table + model, services/graph.py (networkx BFS/ancestor helpers, reusable by Phase 6's rollback engine), edge creation wired into the chat pipeline, GET /memories/{id}/graph, Graph.tsx + GraphView (react-flow/dagre at the time; now @xyflow/react + elkjs), and an idempotent scripts/seed_demo.py that seeds the "likes Python → recommend Django → recommend FastAPI" chain the rule-based extractor can't produce on its own.
 
-Phase 5 (Merkle Integrity): merkle_roots table + model, services/merkle.py (tree build + verify_integrity), root recomputed on every write, POST /integrity/verify + GET /integrity/history + POST /attack/tamper-db, and IntegrityCheck.tsx.
+Phase 5 (Merkle Integrity): merkle_roots table + model, services/merkle.py (tree build + verify_integrity), root recomputed on every write, POST /integrity/verify (now GET /v1/integrity/verify) + GET /integrity/history + POST /attack/tamper-db, and IntegrityCheck.tsx.
 
 Notable bug found and fixed along the way: pgvector doesn't round-trip embedding floats bit-exactly through Postgres (~1e-9 noise per component), which made every legitimate row look "tampered" the first time verify_integrity read embeddings back from the DB — the first fix (rounding to 6 decimals) still failed probabilistically across 384-dimensional vectors, so I fixed it properly by hashing the embedding after a db.refresh(), guaranteeing write-time and verify-time hash identical bytes. Documented in PLAN.md and CLAUDE.md for future reference.
 
@@ -50,7 +50,7 @@ Rollback.tsx admin page: inject poison / tamper DB / mark-poisoned-and-recover, 
 Phase 7 — ML Trust Layer (RandomForest + SHAP)
 
 60-example hand-authored synthetic_examples.json, app/ml/train.py (trains on synthetic + real logged rollback outcomes, best-effort DB access)
-trust_engine.py now blends the Phase 2 rule score with 100*P(safe) from a trained RF once model.pkl clears min_training_samples — trust_breakdown becomes real per-feature SHAP contributions once live
+trust_engine.py now blends the Phase 2 rule score with 100*P(safe) from a trained RF once model.pkl has min_training_samples (50) REAL rollback-labelled samples — or, with ML_BOOTSTRAP_ON_SYNTHETIC=true for the demo, once the synthetic set alone clears it (labelled "bootstrap model" in the UI). trust_breakdown becomes real per-feature SHAP contributions once live
 Re-ran the exact flow-1 demo script live through /chat: same store→reject narrative as Phase 2, now genuinely backed by shap.TreeExplainer, confirmed in the browser too
 Along the way, found and fixed a real bug: training model.pkl locally silently broke Phase 2's own unit tests (they depended on incidental file-system state). Fixed by pointing them at the newly-extracted pure rule function.
 Both docs/PLAN.md (checklists, verification notes, implementation-decision writeups in the existing style) and CLAUDE.md's status section are updated to reflect Phases 0–7 complete, Phase 8 next. All 43 backend tests pass, frontend builds clean, and the DB is left in a pristine seeded state. Nothing was committed — that's left for you to review.

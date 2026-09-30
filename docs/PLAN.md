@@ -322,6 +322,9 @@ Memories/MemoryDetail/TrustAnalysis pages from §8 against Phase 1–2 data.
       version timeline
 - [x] Frontend `TrustAnalysis.tsx` — the additive breakdown bars
       (+30/+24/+18/-10/+20 style) reading real `trust_breakdown` JSON
+      *(landed as the `components/TrustBreakdownBars/` panel on
+      `MemoryDetail.tsx`, not a separate `TrustAnalysis.tsx` page — see
+      the note below)*
 - [x] `components/StatTile/`, `components/TrustBreakdownBars/`
 - [x] Admin route shell (`/admin`, `/admin/memories`,
       `/admin/memories/:id`) wired into `App.tsx`
@@ -375,7 +378,8 @@ and the `dependency_edges` table.
       child=new_version)`
 - [x] `GET /memories/{memory_id}/graph` — ancestor+descendant subgraph
 - [x] Frontend `Graph.tsx` + `components/GraphView/` (react-flow wrapper
-      + layout algorithm, e.g. dagre)
+      + layout algorithm, e.g. dagre) *(now `@xyflow/react` with an
+      `elkjs` layout — dagre was dropped as unmaintained)*
 - [x] Wire `MemoryDetail.tsx`'s dependency section to the real graph
       endpoint (replacing the Phase 3 placeholder)
 
@@ -442,7 +446,9 @@ errors on either page. Screenshots reviewed, not just captured.
 - [x] `POST /integrity/verify`: recompute hash per active version vs.
       stored `content_hash` (row-level tamper) + rebuild tree vs. latest
       `merkle_roots` row (structural tamper); return exact mismatched
-      `version_id`(s) on failure
+      `version_id`(s) on failure *(now `GET /v1/integrity/verify` — it's
+      read-only — and it hash-checks superseded versions too, not just
+      active ones)*
 - [x] `GET /integrity/history` — past root snapshots
 - [x] `POST /attack/tamper-db` (demo-only route): directly `UPDATE`s a
       row's `text`, bypassing the API/pipeline entirely — this must use
@@ -662,7 +668,8 @@ per §6.5 part 2.
       events (§6.5) feed back as labels — at minimum a documented/manual
       "retrain" trigger; a live auto-retrain loop is optional polish
 - [x] Update `TrustAnalysis.tsx` if the breakdown category set changes
-      once SHAP output replaces hand-tuned constants
+      once SHAP output replaces hand-tuned constants *(done in
+      `components/TrustBreakdownBars/` — there is no `TrustAnalysis.tsx`)*
 
 **Demo checkpoint:** re-run §9 flow 1 (poison + reject live) and confirm
 the breakdown panel is now backed by real SHAP values, not the
@@ -728,14 +735,18 @@ seeded state after verification.
   (`n_samples`) directly in the pickled bundle, and `score_candidate` reads
   that number back rather than counting `trust_events` rows itself on every
   scoring call.
-- **The 60-example synthetic dataset clears `min_training_samples=50` on
-  its own, with zero real logged examples needed.** This was a deliberate
-  choice, not an accident: PLAN.md's own "every phase must leave the demo
-  runnable" ground rule means the guide shouldn't have to script 50 chat
-  turns before the ML layer visibly kicks in — running `python -m app.ml.
-  train` once, immediately after `git clone`, is enough. Real logged
-  `trust_events`/`rollback_events` outcomes (see below) still blend in
-  additively on top once they exist.
+- **The synthetic set only clears the gate in explicit bootstrap mode.**
+  Originally the gate counted the synthetic+real total, so the 60-example
+  synthetic set alone activated the RF — convenient for the demo, but it
+  meant the "learned" model went live with zero real-world signal. The gate
+  was then changed to count only real rollback-labelled samples
+  (`n_real_samples`), which made the SHAP layer unreachable in any demo
+  (you'd need 50 rollback-labelled versions). Resolution: real samples gate
+  by default (mode `rf_real`), and `ML_BOOTSTRAP_ON_SYNTHETIC=true` (set in
+  `.env.example` for the demo) lets the total clear it instead — mode
+  `rf_bootstrap`, exposed via `GET /v1/trust/model` and labelled
+  "bootstrap model" in `TrustBreakdownBars` so the demo never presents a
+  synthetic-trained model as learned from real outcomes.
 - **Real-outcome retraining reuses `rollback_events`, since no admin
   approve/reject UI exists yet.** DESIGN.md 6.5 names two feedback signals:
   "admin approve/reject" and "rollback triggered = retroactive 'poisoned'

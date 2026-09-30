@@ -554,8 +554,8 @@ synthetic data alone.
 gating decisions (store/review/reject mirrors zero-trust's
 allow/step-up/deny), and — notably — includes a *sensitivity analysis* of
 the scoring weights, something RecoverMem's own rule engine has not yet
-done (PLAN.md/bugs.md flags "rule scorer weights are uncalibrated magic
-numbers" as a known limitation).
+done (`backend/app/core/config.py` documents the rule scorer's weights as
+hand-tuned, not calibrated against labelled data — a known limitation).
 
 **Demerits:** Network/access-control domain, not memory/data-trust —
 requires translation of concepts (trust score is about the network entity,
